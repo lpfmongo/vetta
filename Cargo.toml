@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 authors = ["lnivva"]
 license = "MIT"
+description = "Institutional-grade financial analysis engine combining ASR (Whisper), vector embeddings, and semantic search for earnings call and 10-K analysis."
 
 [dependencies]
 
