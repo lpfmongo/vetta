@@ -3,7 +3,7 @@ PROTO_OUT = .
 
 PROTOS := $(shell find $(PROTO_DIR) -name '*.proto')
 
-.PHONY: proto setup test test-unit test-integration clean
+.PHONY: proto setup test test-unit test-integration clean format
 
 proto:
 	uv run python -m grpc_tools.protoc \
@@ -17,6 +17,9 @@ proto:
 
 setup:
 	uv sync
+
+format:
+	uv run ruff format .
 
 test:
 	uv run pytest -v
