@@ -1,6 +1,7 @@
 use clap::{Parser, Subcommand, ValueEnum};
 use colored::*;
 use miette::{Context, IntoDiagnostic, Result, set_panic_hook};
+use std::path::Path;
 use std::{
     io::{self, Write},
     path::PathBuf,
@@ -109,7 +110,7 @@ async fn run_processing_pipeline(
     ticker: String,
     year: u16,
     quarter: CliQuarter,
-    socket_path: &PathBuf,
+    socket_path: &Path,
     out: Option<PathBuf>,
     print: bool,
 ) -> Result<()> {
