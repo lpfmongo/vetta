@@ -63,7 +63,7 @@ The pipeline prints live progress as transcript chunks stream back:
    VETTA FINANCIAL ENGINE
    ======================
 
-   TARGET:    AAPL Q3 2024
+   TARGET:    XXXX Q3 2024
    INPUT:     /path/to/earnings.mp3
 
    ✔ VALIDATION PASSED

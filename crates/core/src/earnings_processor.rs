@@ -98,6 +98,7 @@ mod tests {
     fn write_temp(bytes: &[u8]) -> NamedTempFile {
         let mut file = NamedTempFile::new().unwrap();
         file.write_all(bytes).unwrap();
+        file.flush().unwrap();
         file
     }
 
