@@ -32,7 +32,7 @@ You will see the ready line when it is accepting connections:
 [whisper] ready on /tmp/whisper.sock
 ```
 
-## 3. Generating a test audio file (MacOS Only)
+## 3. Generating a test audio file (macOS Only)
 
 ```bash
 say -v Samantha \
