@@ -2,7 +2,7 @@
 
 Vetta is a financial analysis engine designed to help analysts find meaningful information faster and produce better
 investment insights. It focuses on ingesting, processing, and organizing both qualitative and quantitative data so users
-quickly search and retrieve meaningful information.
+can quickly search and retrieve meaningful information.
 
 ## What it does
 

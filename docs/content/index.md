@@ -14,6 +14,6 @@ hero:
 
 features:
   - title: Powerful semantic search
-    details: Query earnings calls in natural language and retrieve relevant passages across tickers,quarters, speakers,
-      and topics.
+    details: Query earnings calls in natural language and retrieve relevant passages across tickers, quarters,
+      speakers, and topics.
 ---

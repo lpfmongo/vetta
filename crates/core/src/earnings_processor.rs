@@ -107,9 +107,11 @@ mod tests {
 
     #[test]
     fn file_not_found_includes_path() {
-        let path = "non_existent_file.mp3";
-        let err = validate_media_file(path).unwrap_err();
-        assert!(matches!(err, IngestError::FileNotFound(p) if p == path));
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("non_existent_file.mp3");
+        let path_str = path.to_str().unwrap();
+        let err = validate_media_file(path_str).unwrap_err();
+        assert!(matches!(err, IngestError::FileNotFound(p) if p == path_str));
     }
 
     #[test]
