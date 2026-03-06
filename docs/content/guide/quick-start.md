@@ -35,7 +35,7 @@ You will see the ready line when it is accepting connections:
 ## 3. Generating a test audio file (macOS Only)
 
 ::: tip Platform Support
-The `say` command above is macOS-specific. Linux/Windows users should instead pass their MP3 using the
+The `say` command below is macOS-specific. Linux/Windows users should instead pass their MP3 using the
 `--file /path/to/file.mp3` flag.  
 :::
 
