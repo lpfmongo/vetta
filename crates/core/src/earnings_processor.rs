@@ -1,16 +1,25 @@
 use miette::Diagnostic;
+use mongodb::bson::doc;
 use std::fs;
 use std::path::Path;
 use thiserror::Error;
 
+use crate::db::{Db, DbConfig};
+use crate::domain::Quarter;
+use crate::stt::{SpeechToText, TranscribeOptions};
+
+// ── Constants ────────────────────────────────────────────────
+
 const MAX_FILE_SIZE_MB: u64 = 500;
 const ALLOWED_MIME_TYPES: [&str; 5] = [
-    "audio/mpeg",  // .mp3
-    "audio/wav",   // .wav
-    "audio/x-wav", // .wav
-    "audio/x-m4a", // .m4a
-    "video/mp4",   // .mp4
+    "audio/mpeg",
+    "audio/wav",
+    "audio/x-wav",
+    "audio/x-m4a",
+    "video/mp4",
 ];
+
+// ── Errors ───────────────────────────────────────────────────
 
 #[derive(Error, Debug, Diagnostic)]
 pub enum IngestError {
@@ -58,6 +67,44 @@ pub enum IngestError {
     Io(#[from] std::io::Error),
 }
 
+#[derive(Error, Debug, Diagnostic)]
+pub enum PipelineError {
+    #[error(transparent)]
+    #[diagnostic(transparent)]
+    Ingest(#[from] IngestError),
+
+    #[error("Transcription failed: {0}")]
+    #[diagnostic(code(vetta::pipeline::transcription))]
+    Transcription(String),
+
+    #[error("Database error: {0}")]
+    #[diagnostic(code(vetta::pipeline::database))]
+    Database(String),
+}
+
+// ── Pipeline events (the caller decides how to render these) ─
+
+#[derive(Debug, Clone)]
+pub enum PipelineEvent {
+    ValidationPassed { format_info: String },
+    TranscriptionProgress { segments: u32 },
+    TranscriptionComplete { segments: u32, full_text: String },
+    Stored,
+}
+
+// ── Pipeline request ─────────────────────────────────────────
+
+pub struct ProcessRequest {
+    pub file_path: String,
+    pub ticker: String,
+    pub year: u16,
+    pub quarter: Quarter,
+    pub language: Option<String>,
+    pub initial_prompt: Option<String>,
+}
+
+// ── Validation (unchanged, still independently usable) ───────
+
 pub fn validate_media_file(path_str: &str) -> Result<String, IngestError> {
     let path = Path::new(path_str);
 
@@ -88,6 +135,94 @@ pub fn validate_media_file(path_str: &str) -> Result<String, IngestError> {
 
     Ok(format!("{} ({}MB)", kind.mime_type(), size_mb))
 }
+
+// ── Orchestrator ─────────────────────────────────────────────
+
+pub struct EarningsProcessor {
+    stt: Box<dyn SpeechToText>,
+    db: Db,
+}
+
+impl EarningsProcessor {
+    pub fn new(stt: Box<dyn SpeechToText>, db: Db) -> Self {
+        Self { stt, db }
+    }
+
+    pub async fn from_env(stt: Box<dyn SpeechToText>) -> Result<Self, PipelineError> {
+        let db_config = DbConfig::from_env().map_err(|e| PipelineError::Database(e.to_string()))?;
+
+        let db = Db::connect(&db_config)
+            .await
+            .map_err(|e| PipelineError::Database(e.to_string()))?;
+
+        Ok(Self { stt, db })
+    }
+
+    /// Runs the full pipeline, yielding progress events through a callback.
+    pub async fn process(
+        &self,
+        request: ProcessRequest,
+        mut on_event: impl FnMut(PipelineEvent),
+    ) -> Result<String, PipelineError> {
+        // ── Stage 1: Validation ──────────────────────────────
+        let format_info = validate_media_file(&request.file_path)?;
+        on_event(PipelineEvent::ValidationPassed { format_info });
+
+        // ── Stage 2: Transcription ───────────────────────────
+        let options = TranscribeOptions {
+            language: request.language,
+            initial_prompt: request.initial_prompt,
+            diarization: false,
+            num_speakers: 2,
+        };
+
+        let mut stream = self
+            .stt
+            .transcribe(&request.file_path, options)
+            .await
+            .map_err(|e| PipelineError::Transcription(e.to_string()))?;
+
+        let mut segment_count = 0u32;
+        let mut full_text = String::new();
+
+        use tokio_stream::StreamExt;
+        while let Some(result) = stream.next().await {
+            let chunk = result.map_err(|e| PipelineError::Transcription(e.to_string()))?;
+            segment_count += 1;
+
+            let line = chunk.text.trim_end();
+            if !line.is_empty() {
+                full_text.push_str(line);
+                full_text.push('\n');
+            }
+
+            on_event(PipelineEvent::TranscriptionProgress {
+                segments: segment_count,
+            });
+        }
+
+        on_event(PipelineEvent::TranscriptionComplete {
+            segments: segment_count,
+            full_text: full_text.clone(),
+        });
+
+        // TODO: post-processing after transcription complete
+
+        // ── Stage 3: Store ───────────────────────────────────
+        // TODO: store the transcription in mongodb collection.
+        self.db
+            .handle()
+            .run_command(doc! { "ping": 1 })
+            .await
+            .map_err(|e| PipelineError::Database(e.to_string()))?;
+
+        on_event(PipelineEvent::Stored);
+
+        Ok(full_text)
+    }
+}
+
+// ── Tests (validation tests unchanged) ───────────────────────
 
 #[cfg(test)]
 mod tests {
