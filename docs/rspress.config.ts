@@ -3,7 +3,8 @@ import {defineConfig} from "@rspress/core";
 export default defineConfig({
     root: "content",
     title: "Vetta",
-    description: "A financial analysis engine for ingesting earnings calls and enabling structured, semantic search across transcripts.",
+    description:
+        "A financial analysis engine for ingesting earnings calls and enabling structured, semantic search across transcripts.",
 
     icon: "/vetta-logo.png",
     logo: {
@@ -23,6 +24,7 @@ export default defineConfig({
         nav: [
             {text: "Guide", link: "/guide/introduction"},
             {text: "Architecture", link: "/architecture/overview"},
+            {text: "Configuration", link: "/configuration/"},
         ],
 
         sidebar: {
@@ -40,6 +42,21 @@ export default defineConfig({
                     text: "Architecture",
                     items: [
                         {text: "Overview", link: "/architecture/overview"},
+                    ],
+                },
+            ],
+            "/configuration/": [
+                {
+                    text: "Configuration",
+                    items: [
+                        {
+                            text: "Overview",
+                            link: "/configuration/",
+                        },
+                        {
+                            text: "STT Service",
+                            link: "/configuration/stt-service",
+                        },
                     ],
                 },
             ],
