@@ -1,7 +1,8 @@
 use super::config::DbConfig;
-use crate::db::error::DbError;
+use crate::db::DbError;
 use mongodb::bson::doc;
-use mongodb::{Client, Database, options::ClientOptions};
+use mongodb::{Client, Collection, Database, options::ClientOptions};
+use serde::{Deserialize, Serialize};
 
 pub struct Db {
     database: Database,
@@ -26,6 +27,14 @@ impl Db {
 
     pub fn handle(&self) -> &Database {
         &self.database
+    }
+
+    /// Get a typed collection handle.  
+    pub fn collection<T>(&self, name: &str) -> Collection<T>
+    where
+        T: Serialize + for<'de> Deserialize<'de> + Unpin + Send + Sync,
+    {
+        self.database.collection::<T>(name)
     }
 
     #[cfg(debug_assertions)]
