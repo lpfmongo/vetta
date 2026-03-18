@@ -45,16 +45,11 @@ pub enum EarningsAction {
         quarter: CliQuarter,
 
         /// Dump raw transcript to a file
-        #[arg(
-            long,
-            value_name = "PATH",
-            conflicts_with = "print",
-            required_unless_present = "print"
-        )]
+        #[arg(long, value_name = "PATH", conflicts_with = "print")]
         out: Option<PathBuf>,
 
         /// Stream transcript to stdout
-        #[arg(long, required_unless_present = "out")]
+        #[arg(long)]
         print: bool,
     },
 }
@@ -83,7 +78,7 @@ pub async fn handle(action: EarningsAction, socket: &Path, quiet: bool) -> Resul
         .await
         .into_diagnostic()?;
 
-    let full_text = processor
+    let transcript = processor
         .process(
             ProcessRequest {
                 file_path: file_path.to_string_lossy().into(),
@@ -93,8 +88,7 @@ pub async fn handle(action: EarningsAction, socket: &Path, quiet: bool) -> Resul
                 language: Some("en".into()),
                 initial_prompt: Some(
                     "Earnings call transcript. Financial terminology, company names, analyst \
-                    questions and management responses."
-                        .into(),
+                    questions and management responses.".into(),
                 ),
             },
             |event| match event {
@@ -114,14 +108,26 @@ pub async fn handle(action: EarningsAction, socket: &Path, quiet: bool) -> Resul
                         let _ = io::stdout().flush();
                     }
                 }
-                PipelineEvent::TranscriptionComplete { segments, .. } => {
+                PipelineEvent::TranscriptionComplete { ref transcript } => {
                     if !quiet {
-                        println!("\r\x1B[K   2. [✔] Transcription ({segments} segments)");
+                        let seg_count = transcript.segments.len();
+                        let speaker_count = transcript.unique_speakers().len();
+                        println!(
+                            "\r\x1B[K   2. [✔] Transcription ({seg_count} segments, {speaker_count} speakers)"
+                        );
                     }
                 }
-                PipelineEvent::Stored => {
+                PipelineEvent::StoringChunks { chunk_count } => {
                     if !quiet {
-                        println!("   3. [✔] Database connection verified");
+                        print!("   3. [{}] Storing {chunk_count} chunks…", "RUNNING".yellow());
+                        let _ = io::stdout().flush();
+                    }
+                }
+                PipelineEvent::Stored { ref call_id, chunk_count } => {
+                    if !quiet {
+                        println!(
+                            "\r\x1B[K   3. [✔] Stored ({chunk_count} chunks → {call_id})"
+                        );
                     }
                 }
             },
@@ -129,11 +135,15 @@ pub async fn handle(action: EarningsAction, socket: &Path, quiet: bool) -> Resul
         .await
         .into_diagnostic()?;
 
+    // Format output as dialogue with speaker labels
+    let output_text = transcript.to_string();
+
     if let Some(ref path) = out {
-        output::write_file(path, &full_text)?;
+        output::write_file(path, &output_text)?;
     }
+
     if print {
-        output::write_stdout(&full_text)?;
+        output::print_transcript(&transcript)?;
     }
 
     if !quiet {
@@ -144,6 +154,7 @@ pub async fn handle(action: EarningsAction, socket: &Path, quiet: bool) -> Resul
 
     Ok(())
 }
+
 fn print_banner(
     ticker: &str,
     quarter: &CoreQuarter,
