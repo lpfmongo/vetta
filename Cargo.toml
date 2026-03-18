@@ -37,6 +37,8 @@ tonic-build = "0.12.3"
 prost = "0.13"
 dotenvy = "0.15.7"
 mongodb = { version = "3.5.1", features = ["bson-3"] }
+textwrap = "0.16.2"
+terminal_size = "0.4.3"
 
 [profile.dev]
 opt-level = 0
