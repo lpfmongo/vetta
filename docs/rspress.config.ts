@@ -1,4 +1,5 @@
 import {defineConfig} from "@rspress/core";
+import mermaid from 'rspress-plugin-mermaid';
 
 export default defineConfig({
     root: "content",
@@ -11,7 +12,7 @@ export default defineConfig({
         light: "/vetta-logo.png",
         dark: "/vetta-logo.png",
     },
-
+    plugins: [mermaid()],
     themeConfig: {
         socialLinks: [
             {
@@ -23,7 +24,7 @@ export default defineConfig({
 
         nav: [
             {text: "Guide", link: "/guide/introduction"},
-            {text: "Architecture", link: "/architecture/overview"},
+            {text: "Technical Documentation", link: "/technical/architecture"},
             {text: "Configuration", link: "/configuration/"},
         ],
 
@@ -37,11 +38,13 @@ export default defineConfig({
                     ],
                 },
             ],
-            "/architecture/": [
+            "/technical/": [
                 {
-                    text: "Architecture",
+                    text: "Technical Documentation",
                     items: [
-                        {text: "Overview", link: "/architecture/overview"},
+                        {text: "Architecture", link: "/technical/architecture"},
+                        {text: "Data Model", link: "/technical/data-model"},
+                        {text: "Search & Retrieval", link: "/technical/search-retrieval"},
                     ],
                 },
             ],
@@ -49,14 +52,8 @@ export default defineConfig({
                 {
                     text: "Configuration",
                     items: [
-                        {
-                            text: "Overview",
-                            link: "/configuration/",
-                        },
-                        {
-                            text: "STT Service",
-                            link: "/configuration/stt-service",
-                        },
+                        {text: "Overview", link: "/configuration/"},
+                        {text: "STT Service", link: "/configuration/stt-service"},
                     ],
                 },
             ],
