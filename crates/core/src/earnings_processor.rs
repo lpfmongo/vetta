@@ -133,11 +133,13 @@ pub fn validate_media_file(path_str: &str) -> Result<String, IngestError> {
         return Err(IngestError::FileEmpty);
     }
 
-    let size_mb = metadata.len() / (1024 * 1024);
-    if size_mb > MAX_FILE_SIZE_MB {
+    let size_bytes = metadata.len();
+    let size_mb = size_bytes / (1024 * 1024);
+
+    if size_bytes > MAX_FILE_SIZE_MB * 1024 * 1024 {
         return Err(IngestError::FileTooLarge {
             limit: MAX_FILE_SIZE_MB,
-            got: size_mb,
+            got: (size_bytes + 1024 * 1024 - 1) / (1024 * 1024),
         });
     }
 
