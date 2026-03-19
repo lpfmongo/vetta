@@ -146,34 +146,66 @@ class TestWhisperServicer:
         assert call_kwargs["vad_filter"] is True
         assert call_kwargs["vad_parameters"]["min_silence_duration_ms"] == 500
 
-    def test_audio_data_payload_uses_bytesio(self, servicer, mock_whisper_model):
-        """Verifies raw 'data' bytes are wrapped in BytesIO."""
-        data = b"fake wav bytes"
-        bio = io.BytesIO(data)
-        _stub_resolve(
-            servicer, audio_input=bio, log_source="<bytes>", source_type="data"
+    def test_audio_data_payload_flows_through_preprocessor(
+        self, servicer, mock_whisper_model
+    ):
+        """
+        Verifies that for a 'data' payload the resolver's output is handed
+        to _preprocessor.prepare(), and the preprocessor's return value
+        (not the raw resolver output) is what reaches model.transcribe().
+        """
+        raw_bytes = b"fake wav bytes"
+        resolver_output = io.BytesIO(raw_bytes)
+
+        # Resolver returns the BytesIO wrapper
+        servicer._resolver.resolve = MagicMock(
+            return_value=(resolver_output, "<bytes>", "data")
         )
-        _stub_preprocessor(servicer)
+
+        # Preprocessor should receive exactly what the resolver returned,
+        # and its output is what the model should see.
+        preprocessed_audio = MagicMock(name="preprocessed_ndarray")
+        servicer._preprocessor.prepare = MagicMock(
+            return_value=(preprocessed_audio, None)
+        )
 
         req = MagicMock()
         req.WhichOneof.return_value = "data"
-        req.data = data
+        req.data = raw_bytes
         req.language = "en"
         req.options = _make_mock_options()
 
         list(servicer.Transcribe(req, MagicMock()))
 
-        audio_input = mock_whisper_model.transcribe.call_args[0][0]
-        assert isinstance(audio_input, io.BytesIO)
-        assert audio_input.read() == b"fake wav bytes"
+        # Assert the preprocessor received the resolver's output
+        servicer._preprocessor.prepare.assert_called_once()
+        prep_args, prep_kwargs = servicer._preprocessor.prepare.call_args
+        assert prep_args[0] is resolver_output
 
-    def test_audio_uri_payload_fetches_file(self, servicer, mock_whisper_model):
-        """Verifies 'uri' is fetched and passed as BytesIO."""
-        data = b"downloaded bytes"
-        bio = io.BytesIO(data)
+        # Assert the model received the preprocessor's output, not the raw BytesIO
+        model_audio_arg = mock_whisper_model.transcribe.call_args[0][0]
+        assert model_audio_arg is preprocessed_audio
+
+    def test_audio_uri_payload_flows_through_preprocessor(
+        self, servicer, mock_whisper_model
+    ):
+        """
+        Verifies that for a 'uri' payload the resolver's output is handed
+        to _preprocessor.prepare(), and the preprocessor's return value
+        is what reaches model.transcribe().
+        """
+        downloaded_bytes = b"downloaded bytes"
+        resolver_output = io.BytesIO(downloaded_bytes)
         uri = "https://example.com/audio.wav"
-        _stub_resolve(servicer, audio_input=bio, log_source=uri, source_type="uri")
-        _stub_preprocessor(servicer)
+
+        servicer._resolver.resolve = MagicMock(
+            return_value=(resolver_output, uri, "uri")
+        )
+
+        preprocessed_audio = MagicMock(name="preprocessed_ndarray")
+        servicer._preprocessor.prepare = MagicMock(
+            return_value=(preprocessed_audio, None)
+        )
 
         req = MagicMock()
         req.WhichOneof.return_value = "uri"
@@ -183,9 +215,14 @@ class TestWhisperServicer:
 
         list(servicer.Transcribe(req, MagicMock()))
 
-        audio_input = mock_whisper_model.transcribe.call_args[0][0]
-        assert isinstance(audio_input, io.BytesIO)
-        assert audio_input.read() == b"downloaded bytes"
+        # Assert the preprocessor received the resolver's output
+        servicer._preprocessor.prepare.assert_called_once()
+        prep_args, prep_kwargs = servicer._preprocessor.prepare.call_args
+        assert prep_args[0] is resolver_output
+
+        # Assert the model received the preprocessor's output, not the raw BytesIO
+        model_audio_arg = mock_whisper_model.transcribe.call_args[0][0]
+        assert model_audio_arg is preprocessed_audio
 
     def test_invalid_audio_source_aborts(self, servicer):
         """Verifies abort if no valid field is set."""
