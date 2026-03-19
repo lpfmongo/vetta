@@ -179,10 +179,10 @@ class DiarizationPipeline:
         )
 
     def run(
-            self,
-            audio_input: str | io.BytesIO,
-            min_speakers: int = 0,
-            max_speakers: int = 0,
+        self,
+        audio_input: str | io.BytesIO,
+        min_speakers: int = 0,
+        max_speakers: int = 0,
     ) -> DiarizationResult:
         """
         Run speaker diarization on the provided audio.
