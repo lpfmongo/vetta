@@ -56,24 +56,20 @@ colima start
 Start the local deployment:
 
 ```bash  
-atlas local setup vetta-local \  
-  --type local \  
-  --port 27017 \  
-  --bindIpAll \  
-  --skipMongosh  
+atlas local setup vetta-local --type local --port 27017 --bindIpAll --skipMongosh
 ```  
 
 On first run the CLI pulls the required container images. Once ready you'll see:
 
 ```text
-Deployment vetta-local created.  
+Deployment vetta-local created.
 ```  
 
 Then **export the required environment variables**:
 
 ```bash  
-export MONGODB_URI="mongodb://localhost:27017/?directConnection=true"  
-export MONGODB_DATABASE="vetta"  
+export MONGODB_URI="mongodb://localhost:27017/?directConnection=true"
+export MONGODB_DATABASE="vetta"
 ```  
 
 ::: warning Required  
@@ -85,16 +81,16 @@ Both variables must be set in every shell session. Consider adding them to your
 
 ```bash  
 # Check status  
-atlas local list   
+atlas local list
   
 # Stop (data is preserved)  
-atlas local pause vetta-local  
+atlas local pause vetta-local
   
 # Start again later  
-atlas local start vetta-local  
+atlas local start vetta-local
   
 # Remove completely (data is lost)  
-atlas local delete vetta-local  
+atlas local delete vetta-local
 ```  
 
 :::
@@ -124,31 +120,27 @@ The `say` command below is macOS-specific. Linux/Windows users should instead pa
 ```bash
 # Speaker 1 (Samantha)  
 say -v Samantha "Good morning everyone and welcome to the Q3 2024 earnings call. We are pleased to report \
- record revenue of 4.2 billion dollars. This represents a 15 percent increase year over year. I will now hand it \ 
- over to our CFO for the financial details." -o /tmp/speaker1.aiff  
+record revenue of 4.2 billion dollars. This represents a 15 percent increase year over year. I will now hand it \
+over to our CFO for the financial details." -o /tmp/speaker1.aiff
   
 # Speaker 2 (Daniel)  
-say -v Daniel "Thank you. As mentioned, total revenue came in at 4.2 billion. Operating expenses were 2.1 billion,\ 
- resulting in a healthy margin. We also saw strong growth in our cloud division, which contributed 1.8 billion in \
-  recurring revenue." -o /tmp/speaker2.aiff  
+say -v Daniel "Thank you. As mentioned, total revenue came in at 4.2 billion. Operating expenses were 2.1 billion,\
+resulting in a healthy margin. We also saw strong growth in our cloud division, which contributed 1.8 billion in \
+recurring revenue." -o /tmp/speaker2.aiff
   
 # Speaker 1 again (Samantha)  
 say -v Samantha "Thank you for that overview. Let me now open the floor for questions. We have several analysts \
- on the line today." -o /tmp/speaker3.aiff  
+on the line today." -o /tmp/speaker3.aiff  
   
 # Combine with ffmpeg - convert to 16kHz mono WAV  
 ffmpeg -y -i /tmp/speaker1.aiff -i /tmp/speaker2.aiff -i /tmp/speaker3.aiff \
- -filter_complex "[0:a][1:a][2:a]concat=n=3:v=0:a=1[out]" -map "[out]" -ar 16000 -ac 1 /tmp/test.wav  
+-filter_complex "[0:a][1:a][2:a]concat=n=3:v=0:a=1[out]" -map "[out]" -ar 16000 -ac 1 /tmp/test.wav  
 ```
 
 ## 4. Process test audio file
 
 ```bash
-cargo run -- earnings process \
-  --file /tmp/test.wav \
-  --ticker XXXX \
-  --year 2024 \
-  --quarter q3
+cargo run -- earnings process --file /tmp/test.wav --ticker XXXX --year 2024 --quarter q3
 ```
 
 The pipeline prints live progress as transcript chunks stream back:
