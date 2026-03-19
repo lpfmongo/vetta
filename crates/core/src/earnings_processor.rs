@@ -247,7 +247,7 @@ impl EarningsProcessor {
         // Parse format from the validation info (e.g. "audio/mpeg (12MB)" → "audio/mpeg")
         let file_format = format_info.split(' ').next().map(String::from);
 
-        let chunk_count = transcript.as_dialogue().len() as u32;
+        let chunk_count = transcript.segments.len() as u32;
         on_event(PipelineEvent::StoringChunks { chunk_count });
 
         let store_request = StoreEarningsRequest {

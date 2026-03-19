@@ -157,10 +157,20 @@ class DiarizationPipeline:
                 f"has access to the model."
             )
 
-        if config.device == "cuda" and torch.cuda.is_available():
-            pipeline.to(torch.device("cuda"))
+        if config.device == "cuda":
+            if not torch.cuda.is_available():
+                raise RuntimeError(
+                    "Diarization device set to 'cuda' but CUDA is unavailable"
+                )
+            pipeline = pipeline.to(torch.device("cuda"))
+        elif config.device == "mps":
+            if not torch.backends.mps.is_available():
+                raise RuntimeError(
+                    "Diarization device set to 'mps' but MPS is unavailable"
+                )
+            pipeline = pipeline.to(torch.device("mps"))
         else:
-            pipeline.to(torch.device("cpu"))
+            pipeline = pipeline.to(torch.device("cpu"))
 
         self.pipeline = pipeline
         self.default_min_speakers = config.min_speakers
@@ -192,10 +202,10 @@ class DiarizationPipeline:
         )
 
     def run(
-            self,
-            audio_input: str | io.BytesIO,
-            min_speakers: int = 0,
-            max_speakers: int = 0,
+        self,
+        audio_input: str | io.BytesIO,
+        min_speakers: int = 0,
+        max_speakers: int = 0,
     ) -> DiarizationResult:
         """
         Run speaker diarization on the provided audio.
@@ -223,9 +233,9 @@ class DiarizationPipeline:
                 f"max_speakers ({effective_max})"
             )
 
-        if effective_min <= 0 or effective_max <= 0:
+        if effective_min < 0 or effective_max < 0:
             raise ValueError(
-                f"min_speakers ({effective_min}) and max_speakers ({effective_max}) must be > 0"
+                f"min_speakers ({effective_min}) and max_speakers ({effective_max}) must be >= 0"
             )
 
         logger.debug(
