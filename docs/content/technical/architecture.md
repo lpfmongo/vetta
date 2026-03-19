@@ -44,7 +44,7 @@ Each stage emits events. The core decides **what** happened; the consumer decide
 
 The pipeline status is tracked on the source document:
 
-```
+```text
 ingested → transcribed → chunked → processed
                                   ↘ failed
 ```

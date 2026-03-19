@@ -15,7 +15,7 @@ This separation allows chunking strategies and embedding models to evolve indepe
 
 ## Architecture
 
-```
+```text
 Audio File
   │
   ▼
