@@ -15,11 +15,13 @@ from audio import (
     AudioFetchError,
     AudioDecodeError,
 )
-from diarization import DiarizationPipeline
+from diarization import DiarizationPipeline, DiarizationResult
 from settings import Settings
 from speech import speech_pb2_grpc, speech_pb2
 
 logger = logging.getLogger(__name__)
+
+_INFERENCE_ERRORS = (RuntimeError, ValueError, OSError)
 
 
 class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
@@ -110,7 +112,7 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
             context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(exc))
             return
 
-            # ── Validate diarization request ─────────────────────
+        # ── Validate diarization request ─────────────────────
         diarize = request.options.diarization
         if diarize and self.diarizer is None:
             context.abort(
@@ -121,7 +123,7 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
             )
             return
 
-            # ── Preprocess audio ─────────────────────────────────
+        # ── Preprocess audio ─────────────────────────────────
         try:
             whisper_input, diar_input = self._preprocessor.prepare(
                 audio,
@@ -131,12 +133,8 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
             context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(exc))
             return
 
-            # ── Phase 1: Diarization (if requested) ──────────────
-        #
-        # Pyannote needs the full audio upfront — there is no way
-        # around this.  Run it to completion and cache the result
-        # so we can query it per-segment during streaming.
-        diarization_result = None
+        # ── Phase 1: Diarization (if requested) ──────────────
+        diarization: DiarizationResult | None = None
         if diarize and diar_input is not None:
             logger.info(
                 "Running diarization (phase 1 of 2)",
@@ -145,38 +143,62 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
                     "audio_source": log_source,
                 },
             )
-            diarization_result = self.diarizer.run(
-                diar_input,
-                min_speakers=self._get_num_speakers(request.options),
-                max_speakers=self._get_num_speakers(request.options),
-            )
+            try:
+                diarization = self.diarizer.run(
+                    diar_input,
+                    min_speakers=self._get_num_speakers(request.options),
+                    max_speakers=self._get_num_speakers(request.options),
+                )
+            except _INFERENCE_ERRORS:
+                logger.exception(
+                    "Diarization pipeline failed",
+                    extra={
+                        "audio_source_type": source_type,
+                        "audio_source": log_source,
+                    },
+                )
+                context.abort(
+                    grpc.StatusCode.INTERNAL,
+                    "Diarization pipeline failed. Check server logs for details.",
+                )
+                return
+
             logger.info(
                 "Diarization complete, starting transcription stream",
                 extra={
-                    "num_speakers": len(diarization_result.labels()),
+                    "num_speakers": len(diarization.labels()),
                 },
             )
 
         # ── Phase 2: Whisper streaming ────────────────────────
-        #
-        # faster-whisper returns a lazy generator.  We iterate it
-        # and yield one gRPC chunk per segment.  If we have a
-        # diarization result, we look up the dominant speaker for
-        # each segment before yielding.
-        segments, info = self.model.transcribe(
-            whisper_input,
-            language=request.language or None,
-            beam_size=inf.beam_size,
-            vad_filter=inf.vad_filter,
-            vad_parameters={
-                "min_silence_duration_ms": inf.vad_min_silence_ms,
-            },
-            word_timestamps=inf.word_timestamps,
-            initial_prompt=prompt,
-            no_speech_threshold=inf.no_speech_threshold,
-            log_prob_threshold=inf.log_prob_threshold,
-            compression_ratio_threshold=inf.compression_ratio_threshold,
-        )
+        try:
+            segments, info = self.model.transcribe(
+                whisper_input,
+                language=request.language or None,
+                beam_size=inf.beam_size,
+                vad_filter=inf.vad_filter,
+                vad_parameters={
+                    "min_silence_duration_ms": inf.vad_min_silence_ms,
+                },
+                word_timestamps=inf.word_timestamps,
+                initial_prompt=prompt,
+                no_speech_threshold=inf.no_speech_threshold,
+                log_prob_threshold=inf.log_prob_threshold,
+                compression_ratio_threshold=inf.compression_ratio_threshold,
+            )
+        except _INFERENCE_ERRORS:
+            logger.exception(
+                "Whisper transcription failed to initialise",
+                extra={
+                    "audio_source_type": source_type,
+                    "audio_source": log_source,
+                },
+            )
+            context.abort(
+                grpc.StatusCode.INTERNAL,
+                "Transcription failed to initialise. Check server logs for details.",
+            )
+            return
 
         logger.info(
             "Transcription streaming started",
@@ -185,18 +207,33 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
                 "language_probability": round(info.language_probability, 2),
                 "audio_source_type": source_type,
                 "audio_source": log_source,
-                "diarization": diarization_result is not None,
+                "diarization": diarization is not None,
             },
         )
 
-        for segment in segments:
-            if diarization_result is not None:
-                speaker = DiarizationPipeline._find_dominant_speaker(
-                    diarization_result,
-                    segment.start,
-                    segment.end,
-                )
-            else:
-                speaker = ""
+        try:
+            for segment in segments:
+                if diarization is not None:
+                    speaker = diarization.speaker_at(
+                        segment.start,
+                        segment.end,
+                    )
+                else:
+                    speaker = ""
 
-            yield self._segment_to_chunk(segment, speaker_id=speaker)
+                yield self._segment_to_chunk(segment, speaker_id=speaker)
+        except grpc.RpcError:
+            raise
+        except _INFERENCE_ERRORS:
+            logger.exception(
+                "Whisper transcription failed mid-stream",
+                extra={
+                    "audio_source_type": source_type,
+                    "audio_source": log_source,
+                },
+            )
+            context.abort(
+                grpc.StatusCode.INTERNAL,
+                "Transcription failed mid-stream. Check server logs for details.",
+            )
+            return

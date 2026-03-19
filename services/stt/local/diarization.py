@@ -28,14 +28,85 @@ class SpeakerSegment:
     speaker: str
 
 
+class DiarizationResult:
+    """
+    Immutable view over a pyannote diarization annotation.
+
+    Exposes only the operations the rest of the application needs,
+    keeping pyannote types out of the public interface.
+    """
+
+    __slots__ = ("_annotation",)
+
+    def __init__(self, annotation: Annotation):
+        self._annotation = annotation
+
+    def labels(self) -> list[str]:
+        """Return the discovered speaker labels."""
+        return [str(label) for label in self._annotation.labels()]
+
+    def speaker_at(self, start: float, end: float) -> str:
+        """
+        Return the dominant speaker for a time span.
+
+        Finds the speaker with the greatest temporal overlap in
+        [start, end].  Returns "" if no speaker overlaps the interval.
+
+        Parameters:
+            start: Interval start time in seconds.
+            end:   Interval end time in seconds.
+
+        Returns:
+            Speaker label (e.g. "SPEAKER_00"), or "".
+        """
+        target = Segment(start, end)
+        best_speaker = ""
+        best_overlap = 0.0
+
+        for turn, _, speaker in self._annotation.itertracks(yield_label=True):
+            overlap = target & turn
+            if overlap is not None:
+                overlap_duration = overlap.end - overlap.start
+                if overlap_duration > best_overlap:
+                    best_overlap = overlap_duration
+                    best_speaker = speaker
+
+        return best_speaker
+
+    def assign_speakers(self, segments: list[dict]) -> list[dict]:
+        """
+        Assign a speaker label to each transcript segment based on
+        maximum temporal overlap with the diarization output.
+
+        Each dict in ``segments`` must contain ``"start"`` and ``"end"``
+        keys (floats, in seconds).  After this call each dict will also
+        contain a ``"speaker"`` key.
+
+        For word-level assignment, each dict may optionally contain a
+        ``"words"`` key (list of dicts with ``"start"`` and ``"end"``),
+        and each word dict will also receive a ``"speaker"`` key.
+
+        Parameters:
+            segments: Transcript segments to label.
+
+        Returns:
+            The same list, now with ``"speaker"`` keys populated.
+        """
+        for seg in segments:
+            seg["speaker"] = self.speaker_at(seg["start"], seg["end"])
+
+            for word in seg.get("words", []):
+                word["speaker"] = self.speaker_at(word["start"], word["end"])
+
+        return segments
+
+
 class DiarizationPipeline:
     """
     Wraps pyannote's speaker-diarization pipeline.
 
-    Loads the model once at startup and exposes a `run()` method that
-    returns speaker assignments for a given audio input, and a static
-    `assign_speakers()` that merges diarization output with transcript
-    segments.
+    Loads the model once at startup and exposes a ``run()`` method that
+    returns a :class:`DiarizationResult` for a given audio input.
 
     Attributes:
         pipeline (Pipeline): The loaded pyannote diarization pipeline.
@@ -48,8 +119,8 @@ class DiarizationPipeline:
         Load the pyannote diarization pipeline.
 
         Parameters:
-            config (DiarizationConfig): Diarization settings including
-                model name, HuggingFace token, device, and speaker bounds.
+            config: Diarization settings including model name,
+                HuggingFace token, device, and speaker bounds.
 
         Raises:
             ValueError: If enabled but hf_token is empty.
@@ -74,7 +145,6 @@ class DiarizationPipeline:
             token=config.hf_token,
         )
 
-        # Move to the appropriate device
         if config.device == "cuda" and torch.cuda.is_available():
             self.pipeline.to(torch.device("cuda"))
         else:
@@ -94,7 +164,7 @@ class DiarizationPipeline:
             result: The raw output from the pyannote pipeline.
 
         Returns:
-            pyannote.core.Annotation: The diarization annotation.
+            The diarization annotation.
         """
         if isinstance(result, Annotation):
             return result
@@ -109,28 +179,27 @@ class DiarizationPipeline:
         )
 
     def run(
-        self,
-        audio_input: str | io.BytesIO,
-        min_speakers: int = 0,
-        max_speakers: int = 0,
-    ) -> Annotation:
+            self,
+            audio_input: str | io.BytesIO,
+            min_speakers: int = 0,
+            max_speakers: int = 0,
+    ) -> DiarizationResult:
         """
         Run speaker diarization on the provided audio.
 
         Parameters:
-            audio_input: A file path (str) or BytesIO containing audio data.
-            min_speakers (int): Minimum expected speakers. 0 uses the
+            audio_input: A file path or BytesIO containing audio data.
+            min_speakers: Minimum expected speakers.  0 uses the
                 configured default; if that is also 0, pyannote decides.
-            max_speakers (int): Maximum expected speakers. Same logic as above.
+            max_speakers: Maximum expected speakers.  Same logic.
 
         Returns:
-            pyannote.core.Annotation: Speaker diarization results with
-                labeled time segments.
+            A :class:`DiarizationResult` that provides speaker lookup
+            without exposing pyannote internals.
         """
         if isinstance(audio_input, io.BytesIO):
             audio_input.seek(0)
 
-            # Resolve speaker bounds: request override > config default > omit
         params: dict = {}
         effective_min = min_speakers or self.default_min_speakers
         effective_max = max_speakers or self.default_max_speakers
@@ -143,7 +212,6 @@ class DiarizationPipeline:
         logger.debug("Running diarization", extra={"params": params})
         result = self.pipeline(audio_input, **params)
 
-        # Handle both old (Annotation) and new (DiarizeOutput) return types
         annotation = self._extract_annotation(result)
 
         speaker_count = len(annotation.labels())
@@ -152,72 +220,4 @@ class DiarizationPipeline:
             extra={"num_speakers": speaker_count},
         )
 
-        return annotation
-
-    @staticmethod
-    def assign_speakers(
-        diarization: Annotation,
-        segments: list[dict],
-    ) -> list[dict]:
-        """
-        Assign a speaker label to each transcript segment based on
-        maximum temporal overlap with the diarization output.
-
-        Each dict in `segments` must contain `"start"` and `"end"` keys
-        (floats, in seconds). After this call, each dict will also
-        contain a `"speaker"` key.
-
-        For word-level assignment, each dict may optionally contain a
-        `"words"` key (list of dicts with `"start"` and `"end"`), and
-        each word dict will also receive a `"speaker"` key.
-
-        Parameters:
-            diarization (Annotation): pyannote diarization result.
-            segments (list[dict]): Transcript segments to label.
-
-        Returns:
-            list[dict]: The same list, now with `"speaker"` keys populated.
-        """
-        for seg in segments:
-            seg["speaker"] = DiarizationPipeline._find_dominant_speaker(
-                diarization, seg["start"], seg["end"]
-            )
-
-            # Optionally assign speakers at word level too
-            for word in seg.get("words", []):
-                word["speaker"] = DiarizationPipeline._find_dominant_speaker(
-                    diarization, word["start"], word["end"]
-                )
-
-        return segments
-
-    @staticmethod
-    def _find_dominant_speaker(
-        diarization: Annotation,
-        start: float,
-        end: float,
-    ) -> str:
-        """
-        Find the speaker with the most temporal overlap in a given interval.
-
-        Parameters:
-            diarization (Annotation): pyannote diarization result.
-            start (float): Interval start time in seconds.
-            end (float): Interval end time in seconds.
-
-        Returns:
-            str: Speaker label (e.g. "SPEAKER_00"), or "" if no overlap found.
-        """
-        target = Segment(start, end)
-        best_speaker = ""
-        best_overlap = 0.0
-
-        for turn, _, speaker in diarization.itertracks(yield_label=True):
-            overlap = target & turn
-            if overlap is not None:
-                overlap_duration = overlap.end - overlap.start
-                if overlap_duration > best_overlap:
-                    best_overlap = overlap_duration
-                    best_speaker = speaker
-
-        return best_speaker
+        return DiarizationResult(annotation)
