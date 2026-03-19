@@ -31,7 +31,7 @@ Choose whichever option fits your setup, then export both variables.
 ### Option A: Use an existing MongoDB instance
 
 If you already have MongoDB running (Atlas cluster, self-hosted, etc.), skip to exporting  
-your variables and continue to [Step 3](#_3-start-the-stt-service):
+your variables and continue to [Step 2](#2-start-the-stt-service):
 
 ```bash  
 export MONGODB_URI="your-connection-string"  
