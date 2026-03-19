@@ -52,7 +52,7 @@ def minimal_config(tmp_path: Path) -> Path:
         num_workers = 1
         
         [diarization]
-        enabled = true
+        enabled = false
         hf_token = "" # or set WHISPER_DIARIZATION_HF_TOKEN env var
         model = "pyannote/speaker-diarization-3.1"
         device = "cuda"
