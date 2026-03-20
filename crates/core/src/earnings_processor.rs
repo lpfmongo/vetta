@@ -83,7 +83,7 @@ pub enum PipelineError {
     #[error("Duplicate earnings call: {0}")]
     #[diagnostic(
         code(vetta::pipeline::duplicate),
-        help("This earnings call has already been processed. Use --force to overwrite.")
+        help("This earnings call has already been processed. Use --replace to overwrite.")
     )]
     Duplicate(String),
 }
@@ -117,6 +117,7 @@ pub struct ProcessRequest {
     pub quarter: Quarter,
     pub language: Option<String>,
     pub initial_prompt: Option<String>,
+    pub replace: bool,
 }
 
 // ── Validation ───────────────────────────────────────────────
@@ -188,11 +189,15 @@ impl EarningsProcessor {
         request: ProcessRequest,
         mut on_event: impl FnMut(PipelineEvent),
     ) -> Result<Transcript, PipelineError> {
+        let repo = EarningsRepository::new(&self.db);
+
         // ── Stage 1: Validation ──────────────────────────────
         let format_info = validate_media_file(&request.file_path)?;
         on_event(PipelineEvent::ValidationPassed {
             format_info: format_info.clone(),
         });
+
+        Self::ensure_not_duplicate(&request, &repo).await?;
 
         // ── Stage 2: Transcription ───────────────────────────
         let options = TranscribeOptions {
@@ -232,9 +237,6 @@ impl EarningsProcessor {
         });
 
         // ── Stage 3: Store in MongoDB ────────────────────────
-        let repo = EarningsRepository::new(&self.db);
-
-        // Extract file name from path
         let file_name = Path::new(&request.file_path)
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
@@ -267,7 +269,11 @@ impl EarningsProcessor {
                 .collect(),
         };
 
-        let call_id = repo.store(store_request).await?;
+        let call_id = if request.replace {
+            repo.replace(store_request).await?
+        } else {
+            repo.store(store_request).await?
+        };
 
         on_event(PipelineEvent::Stored {
             call_id: call_id.to_hex(),
@@ -275,6 +281,26 @@ impl EarningsProcessor {
         });
 
         Ok(transcript)
+    }
+
+    async fn ensure_not_duplicate(
+        request: &ProcessRequest,
+        repo: &EarningsRepository,
+    ) -> Result<(), PipelineError> {
+        let quarter = request.quarter.to_string();
+
+        let existing = repo
+            .find_call(&request.ticker, request.year, &quarter)
+            .await?;
+
+        if existing.is_some() && !request.replace {
+            return Err(PipelineError::Duplicate(format!(
+                "{} {} {}",
+                request.ticker, request.year, request.quarter
+            )));
+        }
+
+        Ok(())
     }
 }
 
