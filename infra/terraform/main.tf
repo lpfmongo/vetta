@@ -53,14 +53,12 @@ locals {
 resource "aws_instance" "vetta_ec2" {
   ami                         = data.aws_ssm_parameter.ubuntu_2404_ami.value
   associate_public_ip_address = true
-  instance_type               = "g6.xlarge"
-  key_name                    = "lfreitas-mongo-kp"
+  instance_type               = var.instance_type
+  key_name                    = var.ec2_kp_name
   subnet_id                   = data.aws_subnet.vetta_public.id
   user_data                   = file(local.init_script)
   user_data_replace_on_change = true
-  vpc_security_group_ids = [
-    "sg-0b9cb19902c1307fb"
-  ]
+  vpc_security_group_ids      = var.security_group
   root_block_device {
     volume_size           = 60
     volume_type           = "gp3"
