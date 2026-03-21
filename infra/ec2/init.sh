@@ -1,46 +1,35 @@
 #!/usr/bin/env bash
 
 # ---------------------------------------------------------------------
-# Cloud-init safe bootstrap for Ubuntu 24.04 (EC2)
+# Cloud-init bootstrap for Ubuntu 24.04 (EC2)
 # ---------------------------------------------------------------------
 
-# Log everything
 exec > >(tee /var/log/vetta-init.log | logger -t vetta-init -s) 2>&1
-
 set -euxo pipefail
 
 echo "===== BOOTSTRAP START ====="
 
-# ---------------------------------------------------------------------
-# Fix Ubuntu EC2 mirror sync issues
-# ---------------------------------------------------------------------
-echo "===== FIX APT MIRRORS ====="
-
-sed -i 's|http://.*.ec2.archive.ubuntu.com|http://archive.ubuntu.com|g' /etc/apt/sources.list
-
 export DEBIAN_FRONTEND=noninteractive
+APT_OPTS=(-o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold")
 
-while fuser /var/lib/dpkg/lock >/dev/null 2>&1; do
+# ---- Wait for any existing apt locks ----
+while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do
   echo "Waiting for apt lock..."
   sleep 5
 done
 
-# Retry apt update (handles transient mirror issues)
 for i in {1..5}; do
   apt-get clean
   apt-get update -y && break
-  echo "apt-get update failed, retrying in 10s..."
-  sleep 10
+  sleep 20
 done
 
-apt-get upgrade -y
+apt-get upgrade -y "${APT_OPTS[@]}"
 
 # ---------------------------------------------------------------------
 # Base packages
 # ---------------------------------------------------------------------
-echo "===== BASE PACKAGES ====="
-
-apt-get install -y \
+apt-get install -y "${APT_OPTS[@]}" \
   build-essential \
   curl \
   git \
@@ -50,21 +39,27 @@ apt-get install -y \
   unzip \
   htop \
   jq \
-  protobuf-compiler
+  protobuf-compiler \
+  ubuntu-drivers-common \
+  nvme-cli
 
 # ---------------------------------------------------------------------
-# Rust
+# Wait for ubuntu user
 # ---------------------------------------------------------------------
-echo "===== INSTALL RUST (ubuntu user) ====="
+while ! id ubuntu &>/dev/null; do
+  echo "Waiting for ubuntu user..."
+  sleep 2
+done
 
+# ---------------------------------------------------------------------
+# Rust (ubuntu user)
+# ---------------------------------------------------------------------
 sudo -u ubuntu -H bash <<'EOF'
 set -e
-if ! command -v rustc >/dev/null 2>&1; then
+command -v rustc >/dev/null 2>&1 || \
   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-fi
 EOF
 
-# Make Rust available system-wide
 cat << 'EOF' > /etc/profile.d/rust.sh
 export PATH="/home/ubuntu/.cargo/bin:$PATH"
 EOF
@@ -73,65 +68,58 @@ chmod +x /etc/profile.d/rust.sh
 # ---------------------------------------------------------------------
 # uv
 # ---------------------------------------------------------------------
-echo "===== INSTALL UV ====="
-
 sudo -u ubuntu -H bash <<'EOF'
 set -e
-if ! command -v uv >/dev/null 2>&1; then
+command -v uv >/dev/null 2>&1 || \
   curl -LsSf https://astral.sh/uv/install.sh | sh
-fi
 EOF
 
 # ---------------------------------------------------------------------
-# NVIDIA DRIVER
+# NVIDIA driver
 # ---------------------------------------------------------------------
-echo "===== NVIDIA DRIVER SETUP ====="
-
-apt-get install -y ubuntu-drivers-common
-
-echo "Running ubuntu-drivers autoinstall..."
 ubuntu-drivers autoinstall || true
 
-echo "Attempting to enable persistence mode (may fail pre-reboot)..."
-nvidia-smi -pm 1 || true
-
 # ---------------------------------------------------------------------
-# INSTANCE NVME SETUP
+# Instance NVMe setup (ephemeral)
 # ---------------------------------------------------------------------
 echo "===== NVME SETUP ====="
 
-NVME_DEV="/dev/nvme1n1"
 NVME_MOUNT="/mnt/nvme"
 
-if lsblk | grep -q nvme1n1; then
+# Find instance-store NVMe (unmounted, no filesystem)
+ROOT_DEV=$(findmnt -no SOURCE / | sed 's/p\?[0-9]*$//')
+NVME_DEV=""
+for dev in /dev/nvme*n1; do
+  [ -b "$dev" ] || continue
+  # Skip the root device
+  [[ "$dev" == "$ROOT_DEV"* ]] && continue
+  NVME_DEV="$dev"
+  break
+done
+
+if [ -n "$NVME_DEV" ]; then
+  echo "Found instance store: $NVME_DEV"
   mkdir -p "$NVME_MOUNT"
 
-  if ! mount | grep -q "$NVME_MOUNT"; then
-    if ! blkid "$NVME_DEV" >/dev/null 2>&1; then
-      mkfs.ext4 -F "$NVME_DEV"
-    fi
-    mount "$NVME_DEV" "$NVME_MOUNT"
-  fi
+  mkfs.ext4 -F "$NVME_DEV"
+  mount "$NVME_DEV" "$NVME_MOUNT"
+
+  UUID=$(blkid -s UUID -o value "$NVME_DEV")
+  grep -q "$UUID" /etc/fstab || \
+    echo "UUID=$UUID $NVME_MOUNT ext4 defaults,nofail 0 2" >> /etc/fstab
+
+  for d in models hf-cache torch-cache uv pip tmp; do
+    mkdir -p "$NVME_MOUNT/$d"
+  done
 
   chown -R ubuntu:ubuntu "$NVME_MOUNT"
-  chmod 755 "$NVME_MOUNT"
-
-  mkdir -p \
-    /mnt/nvme/models \
-    /mnt/nvme/hf-cache \
-    /mnt/nvme/torch-cache \
-    /mnt/nvme/uv \
-    /mnt/nvme/pip \
-    /mnt/nvme/tmp
-
-    chown -R ubuntu:ubuntu "$NVME_MOUNT"
+else
+  echo "WARNING: No instance-store NVMe found"
 fi
 
 # ---------------------------------------------------------------------
-# ENVIRONMENT VARIABLES
+# Environment variables
 # ---------------------------------------------------------------------
-echo "===== ENVIRONMENT VARIABLES ====="
-
 cat << 'EOF' > /etc/profile.d/vetta-env.sh
 export HF_HOME=/mnt/nvme/hf-cache
 export HF_HUB_CACHE=/mnt/nvme/hf-cache
@@ -142,15 +130,23 @@ export WHISPER_MODEL_DOWNLOAD_DIR=/mnt/nvme/models
 export UV_LINK_MODE=copy
 export PATH="/home/ubuntu/.local/bin:/home/ubuntu/.cargo/bin:$PATH"
 EOF
-
 chmod +x /etc/profile.d/vetta-env.sh
+
+cat << 'EOF' > /etc/environment.d/90-vetta.conf
+HF_HOME=/mnt/nvme/hf-cache
+HF_HUB_CACHE=/mnt/nvme/hf-cache
+TRANSFORMERS_CACHE=/mnt/nvme/hf-cache
+TORCH_HOME=/mnt/nvme/torch-cache
+XDG_CACHE_HOME=/mnt/nvme
+WHISPER_MODEL_DOWNLOAD_DIR=/mnt/nvme/models
+UV_LINK_MODE=copy
+EOF
 
 # ---------------------------------------------------------------------
 # Finish
 # ---------------------------------------------------------------------
 echo "===== BOOTSTRAP COMPLETE ====="
-echo "Logs available at /var/log/vetta-init.log"
+echo "Logs at /var/log/vetta-init.log"
 
-# Reboot required for NVIDIA drivers
 echo "===== REBOOTING FOR NVIDIA DRIVER ====="
-reboot
+shutdown -r +1 "Rebooting for NVIDIA driver activation"
