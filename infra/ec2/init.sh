@@ -49,17 +49,16 @@ if lsblk | grep -q nvme1n1; then
   sudo mkdir -p $NVME_MOUNT
 
   if ! mount | grep -q "$NVME_MOUNT"; then
-    sudo mkfs.ext4 -F $NVME_DEV || true
+    if ! sudo blkid "$NVME_DEV" >/dev/null 2>&1; then
+      sudo mkfs.ext4 "$NVME_DEV"
+    fi
     sudo mount $NVME_DEV $NVME_MOUNT
   fi
 
   sudo chown -R ubuntu:ubuntu $NVME_MOUNT
-fi
 
-mkdir -p \
-  /mnt/nvme/models \
-  /mnt/nvme/hf-cache \
-  /mnt/nvme/torch-cache
+  mkdir -p /mnt/nvme/models /mnt/nvme/hf-cache /mnt/nvme/torch-cache
+fi
 
 # ---------------------------------------------------------------------
 # ENVIRONMENT VARIABLES
@@ -80,5 +79,6 @@ export HF_HUB_CACHE=/mnt/nvme/hf-cache
 export TRANSFORMERS_CACHE=/mnt/nvme/hf-cache
 export TORCH_HOME=/mnt/nvme/torch-cache
 export XDG_CACHE_HOME=/mnt/nvme
+export WHISPER_MODEL_DOWNLOAD_DIR=/mnt/nvme/models
 export PATH="$HOME/.local/bin:$PATH"
 EOF
