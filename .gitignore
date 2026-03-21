@@ -105,3 +105,6 @@ http-client.private.env.json
 # Added by cargo
 
 /target
+
+### Mac OS
+*.DS_Store
