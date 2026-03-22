@@ -51,6 +51,8 @@ def serve(config_path: str):
     address = settings.service.address
     socket_path = settings.service.socket_path
 
+    assert socket_path is not None, "Socket path should not be None"
+
     if socket_path and os.path.exists(socket_path):
         os.unlink(socket_path)
 
@@ -66,7 +68,7 @@ def serve(config_path: str):
         server.start()
         os.chmod(socket_path, 0o600)
     else:
-        # For TCP, you'd add TLS here in production
+        # TODO: harden security (ssl/tls mtls)
         server.add_insecure_port(address)
         server.start()
 
