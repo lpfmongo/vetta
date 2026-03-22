@@ -52,6 +52,7 @@ You need an audio file to test the pipeline. Pick the option that matches your p
 </Tabs>
 
 :::tip
-The file format doesn't matter much — Vetta accepts WAV, MP3, AIFF, and other formats that ffmpeg can decode. 16kHz
-mono WAV is ideal for Whisper and avoids an internal conversion step.
+WAV is the preferred format because Whisper and PyAudio handle it natively without any conversion.
+
+Other formats (MP3, AIFF, etc.) are supported through ffmpeg but require an internal conversion step that adds processing time.
 :::

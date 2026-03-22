@@ -1,6 +1,6 @@
 # Local MongoDB with Atlas CLI
 
-The Atlas CLI spins up a full-featured local deployment inside Docker — no cloud account needed.
+The Atlas CLI spins up a full-featured local deployment inside Docker, no cloud account needed.
 
 ## Prerequisites
 
@@ -15,9 +15,14 @@ brew install mongodb-atlas-cli
 **Linux**
 
 ```bash
-# See https://www.mongodb.com/docs/atlas/cli/current/install-atlas-cli/
-curl -fsSL https://atlascli.mongodb.com/install.sh | bash
+sudo apt-get install -y mongodb-atlas-cli
 ```
+
+::: tip
+This assumes the MongoDB APT repository is already configured. If the package is not found, follow
+the [official installation guide](https://www.mongodb.com/docs/atlas/cli/current/install-atlas-cli/) to add the
+repository first.
+:::
 
 ### Install a Docker-compatible runtime
 

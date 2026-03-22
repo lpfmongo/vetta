@@ -10,11 +10,11 @@ session:
 
 Choose the setup that fits your situation:
 
-| Option                     | Best for                                   | Guide                                           |  
-|----------------------------|--------------------------------------------|-------------------------------------------------|  
-| **Local (Atlas CLI)**      | Development, offline work                  | [→ Local Setup](/guide/mongodb/local-atlas-cli) |  
-| **Atlas Cloud**            | Production, team access, cloud deployments | [→ Atlas Cloud](/guide/mongodb/atlas-cloud)     |  
-| **Self-Hosted / Existing** | You already have MongoDB running           | [→ Self-Hosted](/guide/mongodb/self-hosted)     |  
+| Option                     | Best for                                   | Guide                                           |
+|----------------------------|--------------------------------------------|-------------------------------------------------|
+| **Local (Atlas CLI)**      | Development, offline work                  | [→ Local Setup](/guide/mongodb/local-atlas-cli) |
+| **Atlas Cloud**            | Production, team access, cloud deployments | [→ Atlas Cloud](/guide/mongodb/atlas-cloud)     |
+| **Self-Hosted / Existing** | You already have MongoDB running           | [→ Self-Hosted](/guide/mongodb/self-hosted)     |
 
 ::: warning  
 Both `MONGODB_URI` and `MONGODB_DATABASE` must be set before running any Vetta command. Add them to `~/.bashrc`,
