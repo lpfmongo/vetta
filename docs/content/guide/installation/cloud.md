@@ -31,90 +31,111 @@ Whisper inference.
 
 ## Terraform
 
-A reference Terraform module is provided in `infra/terraform/`. The module assumes you have already created a **VPC**
-with a specifically tagged public subnet, a **security group**, and an **EC2 key pair**. It provisions the EC2 instance
-and attaches the init script as user data.
+A reference Terraform module is provided in `infra/terraform/`. The module provisions an EC2 instance with its own
+security group and attaches the init script as user data.
 
-The init script that runs on first boot handles system dependencies including NVIDIA drivers, Rust, uv, protoc, and
-ffmpeg, so you can skip the manual Linux installation steps above.
+The init script runs automatically on first boot and installs all system dependencies (NVIDIA drivers, Rust, uv, protoc,
+ffmpeg), so there are no manual installation steps — just wait for it to finish and verify.
 
 ### Prerequisites
 
-| Resource       | Why                      | Notes                                                                   |
-|----------------|--------------------------|-------------------------------------------------------------------------|
-| VPC + Subnet   | Network for the instance | Public subnet tagged `<your-subnet-tag>` with internet gateway          |
-| Security Group | Firewall rules           | Allow inbound SSH (port 22) from your IP at minimum                     |
-| EC2 Key Pair   | SSH access               | Create in the AWS console or with `aws ec2 create-key-pair`             |
-| AWS Profile    | Authentication           | A profile named `<your-aws-profile>` configured in your AWS credentials |
+| Resource     | Why                      | Notes                                                                            |  
+|--------------|--------------------------|----------------------------------------------------------------------------------|  
+| VPC          | Network for the instance | Pass its ID via the `vetta_vpc_id` variable                                      |  
+| Subnet       | Public subnet            | Must be tagged `Name = vetta-subnet-public1-us-west-2a` with an internet gateway |  
+| EC2 Key Pair | SSH access               | Create in the AWS console or with `aws ec2 create-key-pair`                      |  
+| AWS Profile  | Authentication           | A profile named `mongo` configured in your AWS credentials                       |  
 
 ### Variables
 
-| Variable         | Description                                | Example                        |
-|------------------|--------------------------------------------|--------------------------------|
-| `instance_type`  | EC2 instance type (NVIDIA GPU recommended) | `g6.xlarge`                    |
-| `security_group` | Set of security group IDs to attach        | `["<your-security-group-id>"]` |
-| `ec2_kp_name`    | Name of an existing EC2 key pair           | `<your-key-pair-name>`         |
+| Variable          | Description                                | Example                 |  
+|-------------------|--------------------------------------------|-------------------------|  
+| `instance_type`   | EC2 instance type (NVIDIA GPU recommended) | `g6.xlarge`             |  
+| `ec2_kp_name`     | Name of an existing EC2 key pair           | `my-key-pair`           |  
+| `vetta_vpc_id`    | ID of the VPC to deploy into               | `vpc-0abc1234def56789a` |  
+| `allowed_ssh_ips` | List of CIDRs allowed to SSH (port 22)     | `["203.0.113.10/32"]`   |  
 
 ### Deploy
 
 ```bash
-cd infra/terraform
-terraform init
-terraform apply \
-  -var='instance_type=g6.xlarge' \
-  -var='security_group=["<your-security-group-id>"]' \
-  -var='ec2_kp_name=<your-key-pair-name>'
+cd infra/terraform  
+terraform init  
+terraform apply \  
+  -var='instance_type=g6.xlarge' \  
+  -var='ec2_kp_name=my-key-pair' \  
+  -var='vetta_vpc_id=vpc-0abc1234def56789a' \  
+  -var='allowed_ssh_ips=["203.0.113.10/32"]'  
 ```
 
 Or create a `terraform.tfvars` file to avoid passing flags every time:
 
 ```hcl
-# infra/terraform/terraform.tfvars
+# infra/terraform/terraform.tfvars  
 
 instance_type = "g6.xlarge"
-security_group = ["<your-security-group-id>"]
-ec2_kp_name   = "<your-key-pair-name>"
+ec2_kp_name   = "my-key-pair"
+vetta_vpc_id  = "vpc-0abc1234def56789a"
+allowed_ssh_ips = ["203.0.113.10/32"]  
 ```
 
 ```bash
-cd infra/terraform
-terraform init
-terraform apply
+cd infra/terraform  
+terraform init  
+terraform apply  
 ```
 
-::: tip
-The module does not output the public IP directly. After `terraform apply`, retrieve it with:
+### Post-Deploy
 
-```bash
-aws ec2 describe-instances \
-  --filters "Name=tag:Name,Values=vetta-server-1" \
-  --query "Reservations[].Instances[].PublicIpAddress" \
-  --output text --profile <your-aws-profile>
+After `terraform apply` completes, the public IP is printed as an output:
+
+```text
+Apply complete! Resources: <n> added, 0 changed, 0 destroyed.  
+
+Outputs:  
+
+public_ip = "44.230.XXX.XXX"  
 ```
 
-Then SSH in:
+You can retrieve it again at any time with:
 
 ```bash
-ssh -i ~/.ssh/<your-key-pair-name>.pem ubuntu@<public-ip>
+terraform output public_ip  
 ```
 
-The init script may take several minutes to complete on first boot (driver installation, package downloads). You can
-monitor progress with:
+SSH into the instance:
 
 ```bash
-tail -f /var/log/cloud-init-output.log
+ssh -i ~/.ssh/<your-key-pair-name>.pem ubuntu@$(terraform output -raw public_ip)  
 ```
 
-Check Cloud Init status:
+The init script may take several minutes to complete on first boot (driver installation, package downloads). Wait for
+cloud-init to finish before using the instance:
 
 ```bash
-cloud-init status
+cloud-init status --wait  
+```
+
+Once it reports `status: done`, verify that everything was installed correctly:
+
+```bash  
+rustc --version  
+uv --version  
+protoc --version  
+ffmpeg -version  
+nvidia-smi        # Should show your GPU if on a GPU instance  
+```
+
+::: tip  
+If you need to debug a failed init, check the full cloud-init log:
+
+```bash
+tail -f /var/log/cloud-init-output.log  
 ```
 
 :::
 
-::: warning
+::: warning  
 `/etc/environment` is readable by all users on the instance. For production deployments, prefer injecting secrets
 through **AWS Secrets Manager**, **SSM Parameter Store**, or your CI/CD pipeline rather than writing credentials to
-disk.
+disk.  
 :::

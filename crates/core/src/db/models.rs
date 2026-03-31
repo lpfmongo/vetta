@@ -115,6 +115,7 @@ pub enum CallStatus {
     Chunked,
     Processed,
     Failed,
+    Diarized,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

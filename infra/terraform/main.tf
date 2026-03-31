@@ -34,6 +34,13 @@ data "aws_ssm_parameter" "ubuntu_2404_ami" {
 }
 
 # -------------------------------------------------------------------
+# VPC lookup
+# -------------------------------------------------------------------
+data "aws_vpc" "vetta_vpc" {
+  id = var.vetta_vpc_id
+}
+
+# -------------------------------------------------------------------
 # Subnet lookup
 # -------------------------------------------------------------------
 data "aws_subnet" "vetta_public" {
@@ -41,13 +48,77 @@ data "aws_subnet" "vetta_public" {
     name   = "tag:Name"
     values = ["vetta-subnet-public1-us-west-2a"]
   }
+
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.vetta_vpc.id]
+  }
 }
 
 # -------------------------------------------------------------------
-# EC2 Instance
+# EC2 Instance & Security Group
 # -------------------------------------------------------------------
-locals {
-  init_script = "${path.module}/../ec2/init.sh"
+resource "aws_security_group" "vetta_server_security_group" {
+  name   = "vetta_security_group"
+  vpc_id = data.aws_vpc.vetta_vpc.id
+
+  tags = {
+    Name = "vetta_security_group"
+  }
+
+  revoke_rules_on_delete = true
+
+
+}
+
+resource "aws_security_group_rule" "allow_ssh" {
+  type              = "ingress"
+  from_port         = 22
+  to_port           = 22
+  protocol          = "tcp"
+  cidr_blocks       = var.allowed_ssh_ips
+  security_group_id = aws_security_group.vetta_server_security_group.id
+  description       = "Allow SSH from specific IPs"
+}
+
+resource "aws_security_group_rule" "https" {
+  type              = "egress"
+  from_port         = 443
+  to_port           = 443
+  protocol          = "tcp"
+  cidr_blocks       = var.allowed_web_egress_cidrs
+  security_group_id = aws_security_group.vetta_server_security_group.id
+  description       = "Allow HTTPS outbound traffic"
+}
+
+resource "aws_security_group_rule" "http" {
+  type              = "egress"
+  from_port         = 80
+  to_port           = 80
+  protocol          = "tcp"
+  cidr_blocks       = var.allowed_web_egress_cidrs
+  security_group_id = aws_security_group.vetta_server_security_group.id
+  description       = "Allow HTTP outbound traffic"
+}
+
+resource "aws_security_group_rule" "dns_udp" {
+  type              = "egress"
+  from_port         = 53
+  to_port           = 53
+  protocol          = "udp"
+  cidr_blocks       = [format("%s/32", cidrhost(data.aws_vpc.vetta_vpc.cidr_block, 2))]
+  security_group_id = aws_security_group.vetta_server_security_group.id
+  description       = "Allow DNS (UDP) to VPC resolver"
+}
+
+resource "aws_security_group_rule" "dns_tcp" {
+  type              = "egress"
+  from_port         = 53
+  to_port           = 53
+  protocol          = "tcp"
+  cidr_blocks       = [format("%s/32", cidrhost(data.aws_vpc.vetta_vpc.cidr_block, 2))]
+  security_group_id = aws_security_group.vetta_server_security_group.id
+  description       = "Allow DNS (TCP) to VPC resolver"
 }
 
 resource "aws_instance" "vetta_ec2" {
@@ -58,7 +129,7 @@ resource "aws_instance" "vetta_ec2" {
   subnet_id                   = data.aws_subnet.vetta_public.id
   user_data_base64            = filebase64("${path.module}/../ec2/init.sh")
   user_data_replace_on_change = true
-  vpc_security_group_ids      = var.security_group
+  vpc_security_group_ids      = [aws_security_group.vetta_server_security_group.id]
 
   root_block_device {
     volume_size           = 60
