@@ -1,14 +1,10 @@
+use crate::cli::CliOutputOptions;
 use std::path::PathBuf;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct AppContext {
     pub socket: PathBuf,
-    pub quiet: bool,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub enum OutputMode {
-    Pretty,
-    Json,
-    Both,
+    pub verbose: bool,
+    pub debug: bool,
+    pub output: CliOutputOptions,
 }

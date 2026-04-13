@@ -1,4 +1,4 @@
-# Configuration Reference
+# STT Service Configuration Reference
 
 The Whisper STT service is configured via a `config.toml` file. Every value can be overridden at runtime with an
 environment variable following the pattern:
@@ -62,14 +62,17 @@ connecting to it. When running in a container, mount the socket directory as a s
 
 ## `[model]`
 
-Controls which Whisper model is loaded and how it runs on the available hardware.
+Controls which Whisper model is loaded, how it runs on the available hardware, and authentication for downloading gated
+models.
 
-| Property       | Type     | Default                   | Description                                                                                                                                             |
-|----------------|----------|---------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `size`         | `string` | `large-v3`                | The Whisper model variant to load. Larger models are more accurate but require more memory and are slower to run.                                       |
-| `download_dir` | `string` | `/var/lib/whisper/models` | Local directory where model weights are cached. On first run the model is downloaded from Hugging Face to this path. Subsequent starts load from cache. |
-| `device`       | `string` | `auto`                    | Compute device for the Whisper (CTranslate2) model.                                                                                                     |
-| `compute_type` | `string` | `auto`                    | Numerical precision used for model inference. Affects speed, memory usage, and — to a minor degree — accuracy.                                          |
+| Property       | Type     | Default                   | Description                                                                                                                                                                                                                                     |
+|----------------|----------|---------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `size`         | `string` | `large-v3`                | The Whisper model variant to load. Larger models are more accurate but require more memory and are slower to run.                                                                                                                               |
+| `download_dir` | `string` | `/var/lib/whisper/models` | Local directory where model weights are cached. On first run the model is downloaded from Hugging Face to this path. Subsequent starts load from cache.                                                                                         |
+| `download_dir` | `string` | `/tmp/whisper_models`     | Local directory where model weights are cached. On first run the model is downloaded from Hugging Face to this path. Subsequent starts load from cache.                                                                                         |
+| `device`       | `string` | `cpu`                     | Compute device for the Whisper (CTranslate2) model.                                                                                                                                                                                             |
+| `compute_type` | `string` | `int8`                    | Numerical precision used for model inference. Affects speed, memory usage, and — to a minor degree — accuracy.                                                                                                                                  |
+| `hf_token`     | `string` | `""`                      | Hugging Face API token used for downloading gated models. When set, the service logs into the Hugging Face Hub at startup and exports `HF_TOKEN` to the environment. This token is also used by the diarization pipeline (pyannote) if enabled. |
 
 ### `size` values
 
@@ -110,20 +113,43 @@ cause a startup error.
 | `int8`         | `cpu`, `cuda`      | 8-bit integer quantization. **Best choice for CPU inference** — leverages AVX2/AVX-512 on x86 and NEON on ARM. ~2x faster than `float32` on CPU.       |
 | `float32`      | `cpu`, `cuda`      | Full 32-bit precision. Slowest but highest numerical fidelity. Rarely needed in practice.                                                              |
 
+### `hf_token` setup
+
+The `hf_token` in the `[model]` section serves as the **global** Hugging Face authentication token for the entire
+service. It is used both for downloading Whisper models and for accessing gated diarization models (pyannote).
+
+Before using diarization, you must:
+
+1. **Create a Hugging Face account** at [huggingface.co](https://huggingface.co)
+2. **Accept the model licenses:**
+    - [pyannote/speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1)
+    - [pyannote/segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0)
+3. **Generate an access token** at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) with `read`
+   scope
+4. Set the token in `config.toml` or via the environment variable:
+
+```bash
+export WHISPER_MODEL_HF_TOKEN="hf_abc123..."
+```
+
+:::danger
+Never commit your `hf_token` to version control. Use environment variables or a secrets manager in production.
+:::
+
 ## `[inference]`
 
 Parameters that control the transcription behavior of the Whisper model at request time.
 
-| Property                      | Type      | Default | Range        | Description                                                                                                                                                                                                                                |
-|-------------------------------|-----------|---------|--------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `beam_size`                   | `integer` | `5`     | `1`–`10`     | Number of beams for beam search decoding. Higher values improve accuracy at the cost of speed. `1` disables beam search (greedy decoding).                                                                                                 |
-| `vad_filter`                  | `boolean` | `true`  | —            | Enable Voice Activity Detection preprocessing using Silero VAD. Filters out silent regions before transcription, which reduces hallucinations on audio with long pauses and improves throughput.                                           |
-| `vad_min_silence_ms`          | `integer` | `500`   | `100`–`2000` | Minimum silence duration in milliseconds for the VAD to split a segment. Lower values produce more segments (more aggressive splitting); higher values keep longer phrases together.                                                       |
-| `no_speech_threshold`         | `float`   | `0.6`   | `0.0`–`1.0`  | If the model's no-speech probability for a segment exceeds this threshold, the segment is skipped. Lower values are stricter (skip more); higher values are more permissive.                                                               |
-| `log_prob_threshold`          | `float`   | `-1.0`  | `−inf`–`0.0` | Average log probability threshold for a segment. Segments with an average log probability below this value are treated as low-confidence and may be discarded. More negative values are more permissive.                                   |
-| `compression_ratio_threshold` | `float`   | `2.4`   | `1.0`–`5.0`  | Segments with a text compression ratio (using gzip) above this threshold are considered likely hallucinations and are discarded. Repetitive hallucinated text compresses very well, yielding high ratios.                                  |
-| `word_timestamps`             | `boolean` | `true`  | —            | Enable per-word timestamp extraction. When `true`, each `TranscriptChunk` includes a `words` array with start time, end time, text, and confidence for every word. Required for accurate word-level speaker assignment during diarization. |
-| `initial_prompt`              | `string`  | `""`    | —            | Default prompt prepended to the transcription context. Useful for guiding the model toward specific terminology, spelling, or formatting conventions. Can be overridden per-request via `TranscribeOptions.initial_prompt`.                |
+| Property                      | Type      | Default | Range        | Description                                                                                                                                                                                                                 |
+|-------------------------------|-----------|---------|--------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `beam_size`                   | `integer` | `5`     | `1`–`10`     | Number of beams for beam search decoding. Higher values improve accuracy at the cost of speed. `1` disables beam search (greedy decoding).                                                                                  |
+| `vad_filter`                  | `boolean` | `true`  | —            | Enable Voice Activity Detection preprocessing using Silero VAD. Filters out silent regions before transcription, which reduces hallucinations on audio with long pauses and improves throughput.                            |
+| `vad_min_silence_ms`          | `integer` | `1000`  | `100`–`2000` | Minimum silence duration in milliseconds for the VAD to split a segment. Lower values produce more segments (more aggressive splitting); higher values keep longer phrases together.                                        |
+| `no_speech_threshold`         | `float`   | `0.4`   | `0.0`–`1.0`  | If the model's no-speech probability for a segment exceeds this threshold, the segment is skipped. Lower values are stricter (skip more); higher values are more permissive.                                                |
+| `log_prob_threshold`          | `float`   | `-0.3`  | `−inf`–`0.0` | Average log probability threshold for a segment. Segments with an average log probability below this value are treated as low-confidence and may be discarded. More negative values are more permissive.                    |
+| `compression_ratio_threshold` | `float`   | `2.0`   | `1.0`–`5.0`  | Segments with a text compression ratio (using gzip) above this threshold are considered likely hallucinations and are discarded. Repetitive hallucinated text compresses very well, yielding high ratios.                   |
+| `word_timestamps`             | `boolean` | `true`  | —            | Enable per-word timestamp extraction. When `true`, each `TranscriptChunk` includes a `words` array with start time, end time, text, and confidence for every word. Automatically enabled when diarization is requested..    |
+| `initial_prompt`              | `string`  | `""`    | —            | Default prompt prepended to the transcription context. Useful for guiding the model toward specific terminology, spelling, or formatting conventions. Can be overridden per-request via `TranscribeOptions.initial_prompt`. |
 
 :::tip Tuning for your use case
 
@@ -133,13 +159,13 @@ at `5`.
 **Podcasts / monologues:** `vad_min_silence_ms` of `500`–`800` works well. Consider `beam_size = 3` for faster
 processing.
 
-**Noisy audio:** Tighten `no_speech_threshold` to `0.4` and `log_prob_threshold`to `-0.5` to aggressively filter
+**Noisy audio:** Tighten `no_speech_threshold` to `0.4` and `log_prob_threshold` to `-0.3` to aggressively filter
 low-confidence output.
 
 **Domain-specific vocabulary:** Use `initial_prompt` to prime the model, e.g.:
 
 ```toml
-initial_prompt = "MongoDB, Atlas, aggregation pipeline, BSON, sharding"
+initial_prompt = "Earnings call transcription."
 ```
 
 :::
@@ -185,44 +211,29 @@ by [pyannote.audio](https://github.com/pyannote/pyannote-audio). When enabled, t
 
 | Property       | Type      | Default                            | Description                                                                                                                                                  |
 |----------------|-----------|------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `enabled`      | `boolean` | `false`                            | Whether to load the diarization pipeline at startup. When `false`, the pipeline is not loaded and diarization requests are rejected with `INVALID_ARGUMENT`. |
-| `hf_token`     | `string`  | `""`                               | Hugging Face API token for downloading the gated pyannote models. **Required** when `enabled = true`.                                                        |
+| `enabled`      | `boolean` | `true`                             | Whether to load the diarization pipeline at startup. When `false`, the pipeline is not loaded and diarization requests are rejected with `INVALID_ARGUMENT`. |
 | `model`        | `string`  | `pyannote/speaker-diarization-3.1` | The pyannote pipeline model identifier on Hugging Face.                                                                                                      |
 | `device`       | `string`  | `auto`                             | Compute device for the diarization (PyTorch) model.                                                                                                          |
 | `min_speakers` | `integer` | `0`                                | Default minimum number of expected speakers. Can be overridden per-request via `TranscribeOptions.num_speakers`.                                             |
 | `max_speakers` | `integer` | `0`                                | Default maximum number of expected speakers. Can be overridden per-request via `TranscribeOptions.num_speakers`.                                             |
 
-### `hf_token` setup
-
-Before using diarization, you must:
-
-1. **Create a Hugging Face account** at [huggingface.co](https://huggingface.co)
-2. **Accept the model licenses:**
-    - [pyannote/speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1)
-    - [pyannote/segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0)
-3. **Generate an access token** at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) with `read`
-   scope
-4. Set the token in `config.toml` or via the environment variable:
-
-```bash
-export WHISPER_DIARIZATION_HF_TOKEN="hf_abc123..."
-```
-
-:::danger
-Never commit your `hf_token` to version control. Use environment variables or a secrets manager in production.
+:::note Authentication
+The diarization pipeline uses the `hf_token` from the `[model]` section for authenticating with Hugging Face. There is
+no separate token for diarization. See the [`[model]` hf_token setup](#hf_token-setup) section for details.
 :::
 
 ### `device` values
 
-| Value  | Description                                                                                                                                                     |
-|--------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `auto` | Uses the same device as the Whisper model (`[model] device`).                                                                                                   |
-| `cuda` | Force GPU inference via CUDA. The pyannote pipeline uses PyTorch, so standard CUDA + PyTorch requirements apply.                                                |
-| `cpu`  | Force CPU inference. Useful for offloading diarization to CPU when the GPU is reserved for Whisper.                                                             |
-| `mps`  | Apple Metal Performance Shaders. **Supported by PyTorch** (unlike CTranslate2). This allows diarization to use the Apple Silicon GPU while Whisper runs on CPU. |
+| Value  | Description                                                                                                                                                  |
+|--------|--------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `auto` | Uses the same device as the Whisper model (`[model] device`). If the Whisper model resolved to `cuda`, diarization will also use `cuda`; likewise for `cpu`. |
+| `cuda` | Force GPU inference via CUDA. The pyannote pipeline uses PyTorch, so standard CUDA + PyTorch requirements apply.                                             |
+| `cpu`  | Force CPU inference. Useful for offloading diarization to CPU when the GPU is reserved for Whisper.                                                          |
 
-:::tip Apple Silicon configuration
-On Apple Silicon (M1/M2/M3/M4), the optimal configuration is:
+:::note Apple Silicon
+On Apple Silicon (M1/M2/M3/M4), both CTranslate2 (Whisper) and the diarization device resolution are limited to `cpu`
+and `cuda`. The current device resolution logic does not support `mps`. Whisper pipeline will run on CPU using optimized
+ARM NEON/INT8 instructions:
 
 ```toml
 [model]
@@ -230,11 +241,9 @@ device = "cpu"          # CTranslate2 doesn't support MPS
 compute_type = "int8"   # Fast on ARM NEON
 
 [diarization]
-device = "mps"          # PyTorch supports MPS — uses the Apple GPU
+device = "cpu"          # Resolved via same logic as [model] device
 ```
 
-This lets Whisper leverage optimized ARM INT8 instructions on the CPU while the diarization pipeline runs on the GPU via
-Metal, making efficient use of both compute resources.
 :::
 
 ### `min_speakers` / `max_speakers` behavior
@@ -270,6 +279,7 @@ uppercase.
 | `WHISPER_MODEL_DOWNLOAD_DIR`                    | `[model] download_dir`                    | `string`  |
 | `WHISPER_MODEL_DEVICE`                          | `[model] device`                          | `string`  |
 | `WHISPER_MODEL_COMPUTE_TYPE`                    | `[model] compute_type`                    | `string`  |
+| `WHISPER_MODEL_HF_TOKEN`                        | `[model] hf_token`                        | `string`  |
 | `WHISPER_INFERENCE_BEAM_SIZE`                   | `[inference] beam_size`                   | `integer` |
 | `WHISPER_INFERENCE_VAD_FILTER`                  | `[inference] vad_filter`                  | `boolean` |
 | `WHISPER_INFERENCE_VAD_MIN_SILENCE_MS`          | `[inference] vad_min_silence_ms`          | `integer` |
@@ -282,7 +292,6 @@ uppercase.
 | `WHISPER_CONCURRENCY_CPU_THREADS`               | `[concurrency] cpu_threads`               | `integer` |
 | `WHISPER_CONCURRENCY_NUM_WORKERS`               | `[concurrency] num_workers`               | `integer` |
 | `WHISPER_DIARIZATION_ENABLED`                   | `[diarization] enabled`                   | `boolean` |
-| `WHISPER_DIARIZATION_HF_TOKEN`                  | `[diarization] hf_token`                  | `string`  |
 | `WHISPER_DIARIZATION_MODEL`                     | `[diarization] model`                     | `string`  |
 | `WHISPER_DIARIZATION_DEVICE`                    | `[diarization] device`                    | `string`  |
 | `WHISPER_DIARIZATION_MIN_SPEAKERS`              | `[diarization] min_speakers`              | `integer` |
@@ -322,6 +331,7 @@ address = "127.0.0.1:50051"
 device = "cuda"
 compute_type = "float16"
 size = "large-v3"
+hf_token = ""  # use WHISPER_MODEL_HF_TOKEN env var
 
 [concurrency]
 max_workers = 1
@@ -329,7 +339,6 @@ cpu_threads = 4
 
 [diarization]
 enabled = true
-hf_token = ""  # use WHISPER_DIARIZATION_HF_TOKEN env var
 device = "cuda"
 ```
 
@@ -343,12 +352,12 @@ address = "unix:///tmp/whisper.sock"
 device = "cpu"
 compute_type = "int8"
 size = "large-v3"
+hf_token = ""  # use WHISPER_MODEL_HF_TOKEN env var
 
 [concurrency]
 cpu_threads = 4
 
 [diarization]
 enabled = true
-hf_token = ""  # use WHISPER_DIARIZATION_HF_TOKEN env var
-device = "mps"
+device = "cpu"
 ```

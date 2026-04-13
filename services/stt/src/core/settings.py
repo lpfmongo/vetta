@@ -68,12 +68,20 @@ class DiarizationConfig:
 
 
 @dataclass
+class EmbeddingsConfig:
+    """Configuration for the text embeddings provider (Voyage AI)."""
+
+    api_key: str = field(repr=False)
+
+
+@dataclass
 class Settings:
     service: ServiceConfig
     model: ModelConfig
     inference: InferenceConfig
     concurrency: ConcurrencyConfig
     diarization: DiarizationConfig
+    embeddings: EmbeddingsConfig
 
 
 def _detect_arch() -> str:
@@ -302,6 +310,7 @@ def load_settings(config_path: str | Path = "config.toml") -> Settings:
     inf = raw.get("inference", {})
     con = raw.get("concurrency", {})
     dia = raw.get("diarization", {})
+    emb = raw.get("embeddings", {})
 
     # --- Device + compute resolution ---
     device = _resolve_device(_env("model", "device", str(mdl.get("device", "auto"))))
@@ -413,6 +422,9 @@ def load_settings(config_path: str | Path = "config.toml") -> Settings:
                 "diarization", "max_speakers", int(dia.get("max_speakers", 0))
             ),
         ),
+        embeddings=EmbeddingsConfig(
+            api_key=_env("embeddings", "api_key", str(emb.get("api_key", "")))
+        ),
     )
 
     hf_token = settings.model.hf_token
@@ -445,6 +457,9 @@ def _print_summary(s: Settings):
     print(f"  Compute type   : {s.model.compute_type}")
     print(f"  Model          : {s.model.size}")
     print(f"  HF Token       : {'<configured>' if s.model.hf_token else '<missing>'}")
+    print(
+        f"  Emb API Key    : {'<configured>' if s.embeddings.api_key else '<missing>'}"
+    )
     print(f"  CPU threads    : {s.concurrency.cpu_threads}")
     print(f"  Max workers    : {s.concurrency.max_workers}")
     print(f"  Address        : {s.service.address}")

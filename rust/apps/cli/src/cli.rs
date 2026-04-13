@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
 use crate::commands::earnings::EarningsAction;
@@ -20,8 +20,14 @@ pub struct Cli {
     )]
     pub socket: PathBuf,
 
-    #[arg(long, global = true)]
-    pub quiet: bool,
+    #[arg(short, long, global = true)]
+    pub verbose: bool,
+
+    #[arg(long, global = true, env = "VETTA_DEBUG")]
+    pub debug: bool,
+
+    #[arg(short, global = true, long, value_enum, default_value_t = CliOutputOptions::Json)]
+    pub output: CliOutputOptions,
 
     #[command(subcommand)]
     pub command: Command,
@@ -33,4 +39,10 @@ pub enum Command {
         #[command(subcommand)]
         action: EarningsAction,
     },
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
+pub enum CliOutputOptions {
+    Json,
+    Plain,
 }

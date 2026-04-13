@@ -1,5 +1,6 @@
+pub mod domain;
 mod error;
-pub mod local;
+mod local;
 
 pub use error::SttError;
 pub use local::LocalSttStrategy;
