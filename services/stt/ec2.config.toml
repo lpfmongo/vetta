@@ -1,13 +1,13 @@
 [service]
-socket_path = "/tmp/whisper.sock"
+socket_path = "/run/whisper/whisper.sock"
 log_level = "info"
-max_audio_size_mb = 100
+max_audio_size_mb = 500
 
 [model]
 size = "large-v3"
-download_dir = "/tmp/whisper_models"
-device = "cpu"
-compute_type = "int8"
+download_dir = "/mnt/nvme/models"
+device = "cuda"
+compute_type = "float16"
 hf_token = ""
 
 [inference]
@@ -22,13 +22,13 @@ initial_prompt = ""
 
 [concurrency]
 max_workers = 1
-cpu_threads = 8
+cpu_threads = 4
 num_workers = 1
 
 [diarization]
 enabled = true
 model = "pyannote/speaker-diarization-3.1"
-device = "cpu"
+device = "cuda"
 min_speakers = 0
 max_speakers = 0
 
