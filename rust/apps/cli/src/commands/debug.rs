@@ -212,7 +212,7 @@ fn render_plain_results(results: Vec<VectorSearchResult>, out: &mut dyn Write) -
             Styles::heading().apply_to(format!("Result #{}", i + 1)),
             Styles::stat().apply_to(format!("{:.4}", res.score))
         )
-            .into_diagnostic()?;
+        .into_diagnostic()?;
 
         writeln!(
             out,
@@ -222,7 +222,7 @@ fn render_plain_results(results: Vec<VectorSearchResult>, out: &mut dyn Write) -
             res.year,
             res.quarter
         )
-            .into_diagnostic()?;
+        .into_diagnostic()?;
 
         writeln!(out, "{INDENT}{}\n", separator()).into_diagnostic()?;
 
