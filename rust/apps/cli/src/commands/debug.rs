@@ -92,7 +92,10 @@ async fn handle_search_vectors(args: SearchArgs, ctx: &AppContext) -> Result<()>
     let payload = SearchPayload::resolve(ctx, &args)?;
 
     // 1. Setup Infrastructure
-    let db_config = DbConfig::from_env().into_diagnostic()?;
+    let db_config = DbConfig {
+        uri: ctx.config.mongodb_uri.clone(),
+        database: ctx.config.mongodb_database.clone(),
+    };
     let db = Db::connect(&db_config).await.into_diagnostic()?;
     let embedder = factory::build_embedder(ctx).await?;
     let searcher = build_searcher(&db);
@@ -209,7 +212,7 @@ fn render_plain_results(results: Vec<VectorSearchResult>, out: &mut dyn Write) -
             Styles::heading().apply_to(format!("Result #{}", i + 1)),
             Styles::stat().apply_to(format!("{:.4}", res.score))
         )
-        .into_diagnostic()?;
+            .into_diagnostic()?;
 
         writeln!(
             out,
@@ -219,7 +222,7 @@ fn render_plain_results(results: Vec<VectorSearchResult>, out: &mut dyn Write) -
             res.year,
             res.quarter
         )
-        .into_diagnostic()?;
+            .into_diagnostic()?;
 
         writeln!(out, "{INDENT}{}\n", separator()).into_diagnostic()?;
 
