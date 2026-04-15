@@ -17,7 +17,7 @@ pub enum EmbeddingModel {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct VettaConfig {
-    pub ai_grpc_service_socket_path: PathBuf,
+    pub socket_path: PathBuf,
     pub embedding_model: EmbeddingModel,
     pub mongodb_uri: String,
     pub mongodb_database: String,
@@ -26,7 +26,7 @@ pub struct VettaConfig {
 impl Default for VettaConfig {
     fn default() -> Self {
         Self {
-            ai_grpc_service_socket_path: PathBuf::from("/tmp/whisper.sock"),
+            socket_path: PathBuf::from("/tmp/whisper.sock"),
             embedding_model: EmbeddingModel::Voyage4Large,
             mongodb_uri: "mongodb://localhost:27017".to_string(),
             mongodb_database: "vetta".to_string(),
@@ -48,16 +48,10 @@ impl VettaConfig {
             return Self::default();
         };
 
-        if path.exists() {
-            if let Ok(contents) = fs::read_to_string(&path) {
-                return toml::from_str(&contents).unwrap_or_default();
-            }
-        } else {
-            let default_config = Self::default();
-
-            let _ = default_config.save();
-
-            return default_config;
+        if path.exists()
+            && let Ok(contents) = fs::read_to_string(&path)
+        {
+            return toml::from_str(&contents).unwrap_or_default();
         }
 
         Self::default()
@@ -91,6 +85,16 @@ impl VettaConfig {
             // On Windows, use standard write (Windows handles user-dir permissions differently)
             fs::write(&path, toml_string).into_diagnostic()?;
         }
+
+        Ok(())
+    }
+
+    pub fn delete() -> Result<()> {
+        let Some(path) = Self::file_path() else {
+            return Ok(());
+        };
+
+        fs::remove_file(&path).into_diagnostic()?;
 
         Ok(())
     }

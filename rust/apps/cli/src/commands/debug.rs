@@ -7,10 +7,9 @@ use crate::{
     cli::{CliOutputFormat, PayloadDriven},
     context::AppContext,
     infra::factory,
-    ui::{INDENT, Styles, info_msg, separator, success_msg},
+    ui::{INDENT, Styles, get_writer, info_msg, separator, success_msg},
 };
 
-use crate::ui::get_writer;
 use vetta_core::db::{Db, DbConfig};
 use vetta_core::{InputType, SearchFilters, VectorSearchResult, build_searcher};
 
@@ -20,12 +19,17 @@ pub struct SearchArgs {
     pub query: Option<String>,
     #[arg(short, long, default_value = "5")]
     pub limit: Option<usize>,
+    #[arg(short, long, default_value = "25")]
+    pub candidate_pool: Option<usize>,
     #[arg(short, long)]
     pub ticker: Option<String>,
     #[arg(short, long)]
     pub year: Option<u16>,
     #[arg(long)]
     pub quarter: Option<String>,
+    /// Minimum relevance score required to keep a reranked result
+    #[arg(short = 'm', long, default_value = "0.55")]
+    pub min_score: f64,
     /// Emit intermediary status logs to stderr
     #[arg(short, long)]
     pub verbose: bool,
@@ -44,9 +48,11 @@ pub enum DebugAction {
 pub struct SearchPayload {
     pub query: String,
     pub limit: usize,
+    pub candidate_pool: usize,
     pub ticker: Option<String>,
     pub year: Option<u16>,
     pub quarter: Option<String>,
+    pub min_score: f64,
 }
 
 impl PayloadDriven for SearchPayload {
@@ -56,9 +62,11 @@ impl PayloadDriven for SearchPayload {
         args.query.as_ref().map(|q| Self {
             query: q.clone(),
             limit: args.limit.unwrap_or(5),
+            candidate_pool: args.candidate_pool.unwrap_or(25),
             ticker: args.ticker.clone(),
             year: args.year,
             quarter: args.quarter.clone(),
+            min_score: args.min_score,
         })
     }
 
@@ -69,6 +77,9 @@ impl PayloadDriven for SearchPayload {
         if let Some(l) = args.limit {
             self.limit = l;
         }
+        if let Some(c) = args.candidate_pool {
+            self.candidate_pool = c;
+        }
         if let Some(t) = &args.ticker {
             self.ticker = Some(t.clone());
         }
@@ -78,6 +89,7 @@ impl PayloadDriven for SearchPayload {
         if let Some(q) = &args.quarter {
             self.quarter = Some(q.clone());
         }
+        self.min_score = args.min_score;
     }
 }
 
@@ -99,6 +111,7 @@ async fn handle_search_vectors(args: SearchArgs, ctx: &AppContext) -> Result<()>
 
     let db = Db::connect(&db_config).await.into_diagnostic()?;
     let embedder = factory::build_embedder(ctx).await?;
+    let reranker = factory::build_reranker(ctx).await?;
     let searcher = build_searcher(&db);
 
     // 2. Embed Query (Logs to stderr)
@@ -112,7 +125,7 @@ async fn handle_search_vectors(args: SearchArgs, ctx: &AppContext) -> Result<()>
     let response = embedder
         .embed(
             "voyage-4-large",
-            vec![payload.query],
+            vec![payload.query.clone()],
             InputType::Query,
             true,
         )
@@ -126,33 +139,106 @@ async fn handle_search_vectors(args: SearchArgs, ctx: &AppContext) -> Result<()>
         quarter: payload.quarter,
     };
 
-    // 3. Search (Logs to stderr)
+    // 3. Stage 1: Vector Search (Fetch Candidate Pool)
     if args.verbose {
         eprintln!(
             "{}",
             info_msg(&format!(
-                "Searching MongoDB Atlas (Limit: {})...",
-                payload.limit
+                "Searching MongoDB Atlas (Fetching {} candidates)...",
+                payload.candidate_pool
             ))
         );
     }
 
-    let results = searcher
-        .search_earnings(query_vector, payload.limit, filters)
+    let candidate_results = searcher
+        .search_earnings(query_vector, payload.candidate_pool, filters)
         .await
         .into_diagnostic()?;
 
-    // 4. Resolve Output Destination (Dynamic Write)
+    // 4. Stage 2: Rerank Candidates
+    let final_results = if candidate_results.is_empty() {
+        vec![]
+    } else {
+        if args.verbose {
+            eprintln!(
+                "{}",
+                info_msg(&format!(
+                    "Reranking {} candidates with voyage-rerank-2.5 (Target Top K: {}, Min Score: {})...",
+                    candidate_results.len(),
+                    payload.limit,
+                    payload.min_score
+                ))
+            );
+        }
+
+        // Extract raw document text to send to Voyage AI
+        let documents: Vec<String> = candidate_results.iter().map(|r| r.text.clone()).collect();
+
+        // Call the reranker via UDS using the upgraded model
+        let rerank_response = reranker
+            .rerank(
+                "rerank-2.5",
+                &payload.query,
+                documents,
+                Some(payload.limit as i32),
+            )
+            .await
+            .into_diagnostic()?;
+
+        // Map the relevance scores back to our original search results AND filter
+        let mut reranked = Vec::with_capacity(rerank_response.results.len());
+        for res in rerank_response.results {
+            let score = res.relevance_score as f64;
+
+            // Apply the cutoff threshold
+            if score >= payload.min_score {
+                if let Some(mut original) = candidate_results.get(res.index).cloned() {
+                    original.score = score;
+                    reranked.push(original);
+                }
+            } else if args.verbose {
+                eprintln!(
+                    "{}",
+                    Styles::dimmed().apply_to(format!(
+                        "Dropped result below threshold (Score: {:.4})",
+                        score
+                    ))
+                );
+            }
+        }
+
+        reranked
+    };
+
+    // 5. Resolve Output Destination (Dynamic Write)
     let mut writer = get_writer(&ctx.output)?;
 
-    // 5. Render to format
+    // 6. Render to format
     match ctx.format {
         CliOutputFormat::Json => {
-            let json = serde_json::to_string_pretty(&results).into_diagnostic()?;
+            let debug_payload = serde_json::json!({
+                "candidates": candidate_results,
+                "final": final_results,
+            });
+            let json = serde_json::to_string_pretty(&debug_payload).into_diagnostic()?;
             writeln!(writer, "{}", json).into_diagnostic()?;
         }
         CliOutputFormat::Plain => {
-            render_plain_results(results, &mut writer)?;
+            writeln!(
+                writer,
+                "\n{}",
+                info_msg("--- Stage 1: Vector Search Candidates ---")
+            )
+            .into_diagnostic()?;
+            render_plain_results(&candidate_results, &mut writer)?;
+
+            writeln!(
+                writer,
+                "\n{}",
+                info_msg("--- Stage 2: Reranked Results (Filtered) ---")
+            )
+            .into_diagnostic()?;
+            render_plain_results(&final_results, &mut writer)?;
         }
     }
 
@@ -199,7 +285,7 @@ fn handle_migrate_db(ctx: &AppContext) -> Result<()> {
     Ok(())
 }
 
-fn render_plain_results(results: Vec<VectorSearchResult>, out: &mut dyn Write) -> Result<()> {
+fn render_plain_results(results: &[VectorSearchResult], out: &mut dyn Write) -> Result<()> {
     if results.is_empty() {
         writeln!(out, "\n{INDENT}No relevant segments found.").into_diagnostic()?;
         return Ok(());
@@ -209,7 +295,7 @@ fn render_plain_results(results: Vec<VectorSearchResult>, out: &mut dyn Write) -
         writeln!(out, "\n{INDENT}{}", separator()).into_diagnostic()?;
         writeln!(
             out,
-            "{INDENT}{} (Score: {})",
+            "{INDENT}{} (Relevance Score: {})",
             Styles::heading().apply_to(format!("Result #{}", i + 1)),
             Styles::stat().apply_to(format!("{:.4}", res.score))
         )

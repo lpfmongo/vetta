@@ -33,12 +33,15 @@ pub enum ConfigAction {
 
     /// Updates configuration values (via flags or JSON payload)
     Set(ConfigSetArgs),
+
+    /// Delete the current configuration file
+    Delete,
 }
 
 /// Payload for bulk configuration updates
 #[derive(Debug, serde::Deserialize)]
 pub struct ConfigPayload {
-    pub socket: Option<PathBuf>,
+    pub socket_path: Option<PathBuf>,
     pub mongo_uri: Option<String>,
     pub mongo_db: Option<String>,
     pub embedding_model: Option<EmbeddingModel>,
@@ -54,7 +57,7 @@ impl PayloadDriven for ConfigPayload {
             || args.embedding_model.is_some()
         {
             Some(Self {
-                socket: args.socket.clone(),
+                socket_path: args.socket.clone(),
                 mongo_uri: args.mongo_uri.clone(),
                 mongo_db: args.mongo_db.clone(),
                 embedding_model: args.embedding_model.clone(),
@@ -66,7 +69,7 @@ impl PayloadDriven for ConfigPayload {
 
     fn merge_cli(&mut self, args: &Self::CliArgs) {
         if let Some(s) = &args.socket {
-            self.socket = Some(s.clone());
+            self.socket_path = Some(s.clone());
         }
         if let Some(u) = &args.mongo_uri {
             self.mongo_uri = Some(u.clone());
@@ -130,8 +133,8 @@ pub async fn handle(action: ConfigAction, ctx: &AppContext) -> Result<()> {
             let mut current_config = ctx.config.clone();
             let mut updated = false;
 
-            if let Some(s) = payload.socket {
-                current_config.ai_grpc_service_socket_path = s;
+            if let Some(s) = payload.socket_path {
+                current_config.socket_path = s;
                 updated = true;
             }
             if let Some(uri) = payload.mongo_uri {
@@ -152,6 +155,16 @@ pub async fn handle(action: ConfigAction, ctx: &AppContext) -> Result<()> {
                 eprintln!("{}", success_msg("Configuration updated."));
             } else {
                 eprintln!("{}", warn_msg("No updates provided."));
+            }
+        }
+
+        ConfigAction::Delete => {
+            if config_path.exists() {
+                VettaConfig::delete()?;
+                eprintln!(
+                    "{}",
+                    warn_msg(&format!("Deleted config at {}", config_path.display()))
+                );
             }
         }
     }

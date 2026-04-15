@@ -1,4 +1,4 @@
-use clap::{Args, Subcommand, ValueEnum};
+use clap::{Args, Subcommand};
 use miette::{IntoDiagnostic, Result};
 use std::io::Write;
 use std::path::PathBuf;
@@ -11,29 +11,9 @@ use crate::{
 };
 
 use crate::ui::get_writer;
+use vetta_core::Quarter;
 use vetta_core::db::{Db, DbConfig};
 use vetta_core::earnings::{EarningsProcessor, ProcessEarningsCallRequest};
-use vetta_core::stt::domain::Quarter as CoreQuarter;
-
-#[derive(Debug, Clone, ValueEnum, serde::Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum CliQuarter {
-    Q1,
-    Q2,
-    Q3,
-    Q4,
-}
-
-impl From<CliQuarter> for CoreQuarter {
-    fn from(q: CliQuarter) -> Self {
-        match q {
-            CliQuarter::Q1 => CoreQuarter::Q1,
-            CliQuarter::Q2 => CoreQuarter::Q2,
-            CliQuarter::Q3 => CoreQuarter::Q3,
-            CliQuarter::Q4 => CoreQuarter::Q4,
-        }
-    }
-}
 
 #[derive(Args, Debug, Clone)]
 pub struct ProcessArgs {
@@ -44,7 +24,7 @@ pub struct ProcessArgs {
     #[arg(short, long)]
     pub year: Option<u16>,
     #[arg(short, long, value_enum)]
-    pub quarter: Option<CliQuarter>,
+    pub quarter: Option<Quarter>,
     #[arg(long)]
     pub replace: bool,
     #[arg(short, long)]
@@ -61,7 +41,7 @@ pub struct ProcessPayload {
     pub file: PathBuf,
     pub ticker: String,
     pub year: u16,
-    pub quarter: CliQuarter,
+    pub quarter: Quarter,
     #[serde(default)]
     pub replace: bool,
 }
@@ -77,7 +57,7 @@ impl PayloadDriven for ProcessPayload {
                 file: f.clone(),
                 ticker: t.clone(),
                 year: *y,
-                quarter: q.clone(),
+                quarter: *q,
                 replace: args.replace,
             })
         } else {
@@ -96,7 +76,7 @@ impl PayloadDriven for ProcessPayload {
             self.year = y;
         }
         if let Some(q) = &args.quarter {
-            self.quarter = q.clone();
+            self.quarter = *q;
         }
         if args.replace {
             self.replace = true;
@@ -128,7 +108,7 @@ pub async fn handle(action: EarningsAction, ctx: &AppContext) -> Result<()> {
         file_path: file_path.to_string_lossy().into(),
         ticker: payload.ticker,
         year: payload.year,
-        quarter: payload.quarter.into(),
+        quarter: payload.quarter,
         language: Some("en".into()),
         initial_prompt: Some("Earnings call transcript".into()),
         replace: payload.replace,

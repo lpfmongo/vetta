@@ -1,8 +1,7 @@
+use crate::ui::{DOT, INDENT, Styles, kv_msg, separator, text_prefix, text_width, timestamp};
 use miette::{IntoDiagnostic, Result};
 use std::io::Write;
-use vetta_core::stt::domain::Transcript;
-
-use crate::ui::{DOT, INDENT, Styles, kv_msg, separator, text_prefix, text_width, timestamp};
+use vetta_core::Transcript;
 
 pub fn print_transcript(transcript: &Transcript, out: &mut dyn Write) -> Result<()> {
     let speakers = transcript.unique_speakers();
