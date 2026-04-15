@@ -77,7 +77,10 @@ EOF
 # ---------------------------------------------------------------------
 # NVIDIA driver
 # ---------------------------------------------------------------------
-ubuntu-drivers autoinstall || true
+echo "===== INSTALLING NVIDIA DRIVERS ====="
+apt-get install -y "${APT_OPTS[@]}" linux-headers-aws
+
+ubuntu-drivers autoinstall
 
 # ---------------------------------------------------------------------
 # Instance NVMe setup (ephemeral)

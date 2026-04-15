@@ -1,8 +1,8 @@
 use crate::cli::CliOutputFormat;
 use crate::ui::{self, ARROW, Styles, error_msg, success_msg, warn_msg};
 use indicatif::ProgressBar;
+use vetta_core::Transcript;
 use vetta_core::earnings::{EarningsObserver, PipelineStage};
-use vetta_core::stt::domain::Transcript;
 
 pub struct EarningsCliObserver {
     spinner: ProgressBar,

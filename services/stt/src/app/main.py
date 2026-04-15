@@ -2,7 +2,7 @@
 Entry point for the AI gRPC Application.
 
 This script configures structured logging, initializes the gRPC server,
-registers the STT and Embedding services, and handles the service lifecycle.
+registers the STT, Embedding, and Reranker services, and handles the service lifecycle.
 """
 
 import argparse
@@ -17,8 +17,12 @@ from pythonjsonlogger.json import JsonFormatter
 
 from src.generated.speech import speech_pb2_grpc
 from src.generated.embeddings import embeddings_pb2_grpc
+from src.generated.reranker import reranker_pb2_grpc  # 1. Added Reranker gRPC import
+
 from src.app.embed_servicer import EmbeddingServicer
 from src.app.stt_servicer import SpeechToTextServicer
+from src.app.reranker_servicer import RerankerServicer
+
 from src.core.settings import load_settings
 
 logger = logging.getLogger(__name__)
@@ -51,6 +55,10 @@ def serve(config_path: str):
     )
     embeddings_pb2_grpc.add_EmbeddingServiceServicer_to_server(
         EmbeddingServicer(settings), server
+    )
+    # 3. Register the new Reranker Service
+    reranker_pb2_grpc.add_RerankerServiceServicer_to_server(
+        RerankerServicer(settings), server
     )
 
     # 3. Network Binding Logic
