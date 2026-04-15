@@ -13,7 +13,7 @@ class DomainRerankingResult:
     def __post_init__(self):
         """Runtime validation to ensure the parsed API payload is strictly correct."""
         if not isinstance(self.relevance_score, (float, int)) or isinstance(
-                self.relevance_score, bool
+            self.relevance_score, bool
         ):
             raise TypeError(
                 f"Expected 'relevance_score' to be a float, got {type(self.relevance_score).__name__}"

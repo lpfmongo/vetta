@@ -33,12 +33,12 @@ class RerankerEngine:
         self.client = voyageai.Client(api_key=api_key)
 
     def rerank(
-            self,
-            model: str,
-            query: str,
-            documents: List[str],
-            top_k: Optional[int] = None,
-            truncate: bool = True,
+        self,
+        model: str,
+        query: str,
+        documents: List[str],
+        top_k: Optional[int] = None,
+        truncate: bool = True,
     ) -> DomainRerankingResponse:
         """
         Takes a query and raw document text inputs, returning domain reranking objects.

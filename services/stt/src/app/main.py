@@ -99,7 +99,7 @@ def serve(config_path: str):
 
         # Clean up the socket file gracefully on exit
         if settings.service.is_unix_socket and os.path.exists(
-                settings.service.socket_path
+            settings.service.socket_path
         ):
             os.unlink(settings.service.socket_path)
 
