@@ -47,6 +47,11 @@ class RerankerServicer(reranker_pb2_grpc.RerankerServiceServicer):
 
         top_k = request.top_k if request.HasField("top_k") else None
 
+        if top_k is not None and top_k <= 0:
+            context.abort(
+                grpc.StatusCode.INVALID_ARGUMENT, "top_k must be greater than 0."
+            )
+
         # 2. Execute Business Logic
         try:
             domain_response = self._engine.rerank(
@@ -82,7 +87,7 @@ class RerankerServicer(reranker_pb2_grpc.RerankerServiceServicer):
                 reranker_pb2.RerankingResult(
                     relevance_score=res.relevance_score,
                     index=res.index,
-                    document=res.document,
+                    **({"document": res.document} if res.document is not None else {}),
                 )
                 for res in domain_response.results
             ],

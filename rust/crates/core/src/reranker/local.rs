@@ -1,6 +1,7 @@
 use crate::common::UdsChannel;
 use async_trait::async_trait;
 use std::path::Path;
+use std::time::Duration;
 
 pub mod pb {
     tonic::include_proto!("reranker");
@@ -45,7 +46,9 @@ impl Reranker for LocalRerankerStrategy {
     ) -> Result<DomainRerankResponse, RerankerError> {
         let mut client = self.client().await?;
 
-        let request = tonic::Request::new(RerankRequest {
+        let doc_count = documents.len();
+
+        let mut request = tonic::Request::new(RerankRequest {
             model: model.to_string(),
             query: query.to_string(),
             documents,
@@ -53,18 +56,27 @@ impl Reranker for LocalRerankerStrategy {
             truncate: true,
             extra_params: None,
         });
+        request.set_timeout(Duration::from_secs(10));
 
         let response = client.rerank(request).await?.into_inner();
 
-        let results = response
+        let results: Vec<DomainRerankResult> = response
             .results
             .into_iter()
-            .map(|res| DomainRerankResult {
-                relevance_score: res.relevance_score,
-                index: res.index as usize,
-                document: res.document,
+            .map(|res| {
+                let index = res.index as usize;
+                if index >= doc_count {
+                    return Err(RerankerError::Connection(format!(
+                        "reranker returned out-of-bounds index {index} for {doc_count} document(s)"
+                    )));
+                }
+                Ok(DomainRerankResult {
+                    relevance_score: res.relevance_score,
+                    index,
+                    document: res.document,
+                })
             })
-            .collect();
+            .collect::<Result<Vec<_>, _>>()?;
 
         let total_tokens = response.usage.map(|u| u.total_tokens).unwrap_or(0);
 

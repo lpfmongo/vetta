@@ -24,6 +24,9 @@ class DomainRerankingResult:
                 f"Expected 'index' to be an int, got {type(self.index).__name__}"
             )
 
+        if self.index < 0:
+            raise ValueError("Expected 'index' to be non-negative.")
+
         if self.document is not None and not isinstance(self.document, str):
             raise TypeError("Document must be a string or None.")
 
@@ -37,6 +40,8 @@ class DomainRerankingResponse:
     total_tokens: int
 
     def __post_init__(self):
+        if not isinstance(self.model, str) or not self.model.strip():
+            raise TypeError("Expected 'model' to be a non-empty string.")
         if not isinstance(self.results, list):
             raise TypeError(
                 "Expected 'results' to be a list of DomainRerankingResult objects."
@@ -45,3 +50,11 @@ class DomainRerankingResponse:
             raise TypeError(
                 "All items in 'results' must be DomainRerankingResult instances."
             )
+        if not isinstance(self.total_tokens, int) or isinstance(
+            self.total_tokens, bool
+        ):
+            raise TypeError(
+                f"Expected 'total_tokens' to be an int, got {type(self.total_tokens).__name__}"
+            )
+        if self.total_tokens < 0:
+            raise ValueError("Expected 'total_tokens' to be non-negative.")
