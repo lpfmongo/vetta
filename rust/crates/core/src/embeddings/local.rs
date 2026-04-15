@@ -29,6 +29,8 @@ impl LocalEmbeddingsStrategy {
     }
 }
 
+const VOYAGE_OUTPUT_DIMENSION: Option<i32> = Some(1024);
+
 #[async_trait]
 impl Embedder for LocalEmbeddingsStrategy {
     async fn embed(
@@ -50,7 +52,7 @@ impl Embedder for LocalEmbeddingsStrategy {
             inputs,
             input_type: proto_input_type,
             truncate,
-            output_dimension: None,
+            output_dimension: VOYAGE_OUTPUT_DIMENSION,
             extra_params: None,
         });
 

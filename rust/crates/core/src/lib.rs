@@ -1,7 +1,8 @@
 mod common;
 pub mod db;
 mod embeddings;
-pub mod stt;
+mod reranker;
+mod stt;
 mod vector_search;
 
 pub use embeddings::{Embedder, EmbeddingError, InputType, LocalEmbeddingsStrategy};
@@ -23,3 +24,7 @@ pub mod earnings {
 }
 
 pub use vector_search::{SearchFilters, VectorSearchResult, build_searcher};
+
+pub use reranker::{LocalRerankerStrategy, Reranker};
+
+pub use stt::{LocalSttStrategy, Stt, domain::Quarter, domain::Transcript};
