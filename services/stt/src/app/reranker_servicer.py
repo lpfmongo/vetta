@@ -1,0 +1,92 @@
+import logging
+
+import grpc
+
+from src.generated.reranker import reranker_pb2_grpc, reranker_pb2
+from src.core.settings import Settings
+from src.reranker.engine import RerankerEngine, RerankerError
+
+logger = logging.getLogger(__name__)
+
+
+class RerankerServicer(reranker_pb2_grpc.RerankerServiceServicer):
+    """
+    gRPC Adapter for document reranking.
+    Unpacks requests, interacts with the Voyage AI (or generic) engine,
+    and handles upstream API errors or invalid arguments.
+    """
+
+    def __init__(self, settings: Settings):
+        self._engine = RerankerEngine(settings)
+
+    def Rerank(self, request, context):
+        """
+        Unpack the gRPC request and fetch reranked documents from the domain engine.
+        """
+        model = request.model
+        query = request.query
+        documents = list(request.documents)
+        truncate = request.truncate
+
+        # 1. Validate gRPC Inputs
+        if not model:
+            context.abort(
+                grpc.StatusCode.INVALID_ARGUMENT, "Model identifier cannot be empty."
+            )
+            return None
+
+        if not query:
+            context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Query cannot be empty.")
+            return None
+
+        if not documents:
+            context.abort(
+                grpc.StatusCode.INVALID_ARGUMENT, "Documents list cannot be empty."
+            )
+            return None
+
+        top_k = request.top_k if request.HasField("top_k") else None
+
+        # 2. Execute Business Logic
+        try:
+            domain_response = self._engine.rerank(
+                model=model,
+                query=query,
+                documents=documents,
+                top_k=top_k,
+                truncate=truncate,
+            )
+
+            return self._map_to_proto(domain_response)
+
+        # 3. Handle specific domain exceptions
+        except ValueError as exc:
+            context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(exc))
+        except RerankerError:
+            logger.exception("Reranking generation failed")
+            context.abort(
+                grpc.StatusCode.INTERNAL, "Failed to rerank documents via provider."
+            )
+        except Exception:
+            logger.exception("Unexpected error in RerankerEngine")
+            context.abort(grpc.StatusCode.INTERNAL, "An unexpected error occurred.")
+
+    @staticmethod
+    def _map_to_proto(domain_response) -> reranker_pb2.RerankResponse:
+        """
+        Maps the domain DomainRerankingResponse to the Protobuf message.
+        """
+        return reranker_pb2.RerankResponse(
+            model=domain_response.model,
+            results=[
+                reranker_pb2.RerankingResult(
+                    relevance_score=res.relevance_score,
+                    index=res.index,
+                    document=res.document,
+                )
+                for res in domain_response.results
+            ],
+            usage=reranker_pb2.Usage(
+                total_tokens=domain_response.total_tokens,
+            ),
+        )
