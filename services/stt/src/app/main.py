@@ -2,7 +2,7 @@
 Entry point for the AI gRPC Application.
 
 This script configures structured logging, initializes the gRPC server,
-registers the STT, Embedding, and Reranker services, and handles the service lifecycle.
+registers the STT, Embedding, Reranker, and LLM services, and handles the service lifecycle.
 """
 
 import argparse
@@ -17,11 +17,13 @@ from pythonjsonlogger.json import JsonFormatter
 
 from src.generated.speech import speech_pb2_grpc
 from src.generated.embeddings import embeddings_pb2_grpc
-from src.generated.reranker import reranker_pb2_grpc  # 1. Added Reranker gRPC import
+from src.generated.reranker import reranker_pb2_grpc
+from src.generated.llm import llm_pb2_grpc
 
 from src.app.embed_servicer import EmbeddingServicer
 from src.app.stt_servicer import SpeechToTextServicer
 from src.app.reranker_servicer import RerankerServicer
+from src.app.llm_servicer import LLMServicer
 
 from src.core.settings import load_settings
 
@@ -56,35 +58,31 @@ def serve(config_path: str):
     embeddings_pb2_grpc.add_EmbeddingServiceServicer_to_server(
         EmbeddingServicer(settings), server
     )
-    # 3. Register the new Reranker Service
     reranker_pb2_grpc.add_RerankerServiceServicer_to_server(
         RerankerServicer(settings), server
     )
+
+    llm_pb2_grpc.add_LLMServiceServicer_to_server(LLMServicer(settings), server)
 
     # 3. Network Binding Logic
     if settings.service.is_unix_socket:
         socket_path = settings.service.socket_path
         assert socket_path is not None, "Socket path must be provided for Unix sockets"
 
-        # Ensure the parent directory exists
         os.makedirs(os.path.dirname(socket_path), exist_ok=True)
 
-        # Clean up stale socket file if it crashed previously
         if os.path.exists(socket_path):
             os.unlink(socket_path)
 
-        # gRPC explicitly requires the 'unix://' scheme for UDS
         bind_address = f"unix://{socket_path}"
         server.add_insecure_port(bind_address)
     else:
-        # Standard TCP binding (e.g., "0.0.0.0:50051")
         bind_address = settings.service.address
         server.add_insecure_port(bind_address)
 
     # 4. Start Server
     server.start()
 
-    # Apply tight permissions to the UDS *after* server.start() creates the file
     if settings.service.is_unix_socket:
         os.chmod(settings.service.socket_path, 0o600)
 
@@ -93,11 +91,9 @@ def serve(config_path: str):
     # 5. Graceful Shutdown & Cleanup Handler
     def handle_shutdown(signum, frame):
         logger.info(f"Received signal {signum}, initiating graceful shutdown...")
-        # Allow 10 seconds for active RPCs to finish
         stop_event = server.stop(grace=10)
         stop_event.wait()
 
-        # Clean up the socket file gracefully on exit
         if settings.service.is_unix_socket and os.path.exists(
             settings.service.socket_path
         ):

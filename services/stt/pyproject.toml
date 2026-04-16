@@ -18,9 +18,11 @@ dependencies = [
     "nvidia-curand-cu12; sys_platform == 'linux'",
     "nvidia-cuda-nvrtc-cu12; sys_platform == 'linux'",
     "nvidia-npp-cu12; sys_platform == 'linux'",
-    "torch>=2.11.0",
-    "torchaudio>=2.11.0",
-    "torchcodec>=0.11.0",
+    "vllm>=0.19.0; sys_platform == 'linux'",
+    "mlx-lm>=0.31.2; sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "torch>=2.10.0",
+    "torchaudio>=2.10.0",
+    "torchcodec>=0.10.0",
     "voyageai>=0.3.7",
 ]
 
@@ -64,7 +66,7 @@ testpaths = ["tests"]
 pythonpath = ["."] # Ensures pytest resolves src.* imports correctly from the root
 
 [tool.mypy]
-files = ["src", "tests", "scripts"] # Point explicitly to the new folders
+files = ["src", "tests", "scripts"]
 explicit_package_bases = true
 
 [[tool.mypy.overrides]]
@@ -72,10 +74,11 @@ module = [
     "faster_whisper.*",
     "ctranslate2.*",
     "pyannote.*",
-    "voyageai.*", # Ignored missing imports for voyageai
+    "voyageai.*",
+    "vllm.*",
 ]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = ["src.generated.*"] # Pointed to the new isolated generated folder
+module = ["src.generated.*"]
 ignore_errors = true
