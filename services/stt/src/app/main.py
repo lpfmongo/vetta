@@ -5,6 +5,13 @@ This script configures structured logging, initializes the gRPC server,
 registers the STT, Embedding, Reranker, and LLM services, and handles the service lifecycle.
 """
 
+import multiprocessing
+
+try:
+    multiprocessing.set_start_method('spawn', force=True)
+except RuntimeError:
+    pass
+
 import argparse
 import logging
 import os
