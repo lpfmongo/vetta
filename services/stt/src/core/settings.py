@@ -76,6 +76,13 @@ class EmbeddingsConfig:
 
 
 @dataclass
+class LLMConfig:
+    """Configuration for the local LLM Engine."""
+
+    model: str
+
+
+@dataclass
 class Settings:
     service: ServiceConfig
     model: ModelConfig
@@ -83,6 +90,7 @@ class Settings:
     concurrency: ConcurrencyConfig
     diarization: DiarizationConfig
     embeddings: EmbeddingsConfig
+    llm: LLMConfig
 
 
 def _detect_arch() -> str:
@@ -267,7 +275,7 @@ def _env(section: str, key: str, fallback: str) -> str: ...
 
 
 def _env(
-    section: str, key: str, fallback: str | bool | int | float
+        section: str, key: str, fallback: str | bool | int | float
 ) -> str | bool | int | float:
     """
     Read WHISPER_<SECTION>_<KEY> from environment, cast to type of fallback.
@@ -320,6 +328,7 @@ def load_settings(config_path: str | Path = "config.toml") -> Settings:
     con = raw.get("concurrency", {})
     dia = raw.get("diarization", {})
     emb = raw.get("embeddings", {})
+    llm_raw = raw.get("llm", {})  # <-- ADDED
 
     # --- Device + compute resolution ---
     device = _resolve_device(_env("model", "device", str(mdl.get("device", "auto"))))
@@ -344,7 +353,7 @@ def load_settings(config_path: str | Path = "config.toml") -> Settings:
         "service", "socket_path", str(svc.get("socket_path", "/tmp/whisper.sock"))
     )
     clean_socket_path = (
-        raw_socket[len("unix://") :] if raw_socket.startswith("unix://") else raw_socket
+        raw_socket[len("unix://"):] if raw_socket.startswith("unix://") else raw_socket
     )
 
     settings = Settings(
@@ -423,6 +432,10 @@ def load_settings(config_path: str | Path = "config.toml") -> Settings:
         embeddings=EmbeddingsConfig(
             api_key=_env("embeddings", "api_key", str(emb.get("api_key", "")))
         ),
+        # --- ADDED ---
+        llm=LLMConfig(
+            model=_env("llm", "model", str(llm_raw.get("model", "Qwen/Qwen2.5-14B-Instruct-AWQ")))
+        )
     )
 
     hf_token = settings.model.hf_token
@@ -452,7 +465,8 @@ def _print_summary(s: Settings):
     print(f"  OS/Arch        : {_detect_os()} / {_detect_arch()}")
     print(f"  Device         : {s.model.device}")
     print(f"  Compute type   : {s.model.compute_type}")
-    print(f"  Model          : {s.model.size}")
+    print(f"  STT Model      : {s.model.size}")
+    print(f"  LLM Model      : {s.llm.model}")
     print(f"  HF Token       : {'<configured>' if s.model.hf_token else '<missing>'}")
     print(
         f"  Emb API Key    : {'<configured>' if s.embeddings.api_key else '<missing>'}"
