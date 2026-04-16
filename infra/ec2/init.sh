@@ -135,7 +135,6 @@ systemd-tmpfiles --create
 cat << 'EOF' > /etc/profile.d/vetta-env.sh
 export HF_HOME=/mnt/nvme/hf-cache
 export HF_HUB_CACHE=/mnt/nvme/hf-cache
-export TRANSFORMERS_CACHE=/mnt/nvme/hf-cache
 export TORCH_HOME=/mnt/nvme/torch-cache
 export XDG_CACHE_HOME=/mnt/nvme
 export WHISPER_MODEL_DOWNLOAD_DIR=/mnt/nvme/models
@@ -147,7 +146,6 @@ chmod +x /etc/profile.d/vetta-env.sh
 cat << 'EOF' > /etc/environment.d/90-vetta.conf
 HF_HOME=/mnt/nvme/hf-cache
 HF_HUB_CACHE=/mnt/nvme/hf-cache
-TRANSFORMERS_CACHE=/mnt/nvme/hf-cache
 TORCH_HOME=/mnt/nvme/torch-cache
 XDG_CACHE_HOME=/mnt/nvme
 WHISPER_MODEL_DOWNLOAD_DIR=/mnt/nvme/models
