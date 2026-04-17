@@ -3,7 +3,7 @@ use std::path::Path;
 
 use super::errors::IngestError;
 
-pub const MAX_FILE_SIZE_MB: u64 = 500;
+pub const MAX_FILE_SIZE_MB: u64 = 1000;
 
 pub const ALLOWED_MIME_TYPES: [&str; 5] = [
     "audio/mpeg",

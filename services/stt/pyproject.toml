@@ -11,17 +11,12 @@ dependencies = [
     "requests==2.33.1",
     "python-json-logger==4.1.0",
     "pyannote-audio==4.0.4",
-    "ctranslate2==4.7.1",
-    "nvidia-cuda-runtime-cu12; sys_platform == 'linux'",
-    "nvidia-cublas-cu12; sys_platform == 'linux'",
-    "nvidia-cudnn-cu12; sys_platform == 'linux'",
-    "nvidia-curand-cu12; sys_platform == 'linux'",
-    "nvidia-cuda-nvrtc-cu12; sys_platform == 'linux'",
-    "nvidia-npp-cu12; sys_platform == 'linux'",
     "torch>=2.11.0",
     "torchaudio>=2.11.0",
-    "torchcodec>=0.11.0",
     "voyageai>=0.3.7",
+    "torchcodec>=0.11.0",
+    "nvidia-cublas-cu12; sys_platform == 'linux'",
+    "nvidia-cudnn-cu12; sys_platform == 'linux'"
 ]
 
 [dependency-groups]
@@ -36,35 +31,12 @@ dev = [
     "types-requests>=2.33.0.20260408",
 ]
 
-[tool.uv]
-default-groups = ["dev"]
-environments = [
-    "sys_platform == 'darwin' and platform_machine == 'arm64'",
-    "sys_platform == 'linux' and platform_machine == 'x86_64'",
-]
-
-[tool.uv.sources]
-torch = [
-    { index = "pytorch-cu128", marker = "sys_platform == 'linux'" },
-]
-torchaudio = [
-    { index = "pytorch-cu128", marker = "sys_platform == 'linux'" },
-]
-torchcodec = [
-    { index = "pytorch-cu128", marker = "sys_platform == 'linux'" },
-]
-
-[[tool.uv.index]]
-name = "pytorch-cu128"
-url = "https://download.pytorch.org/whl/cu128"
-explicit = true
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["."] # Ensures pytest resolves src.* imports correctly from the root
+pythonpath = ["."]
 
 [tool.mypy]
-files = ["src", "tests", "scripts"] # Point explicitly to the new folders
+files = ["src", "tests", "scripts"]
 explicit_package_bases = true
 
 [[tool.mypy.overrides]]
@@ -72,10 +44,10 @@ module = [
     "faster_whisper.*",
     "ctranslate2.*",
     "pyannote.*",
-    "voyageai.*", # Ignored missing imports for voyageai
+    "voyageai.*",
 ]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = ["src.generated.*"] # Pointed to the new isolated generated folder
+module = ["src.generated.*"]
 ignore_errors = true
