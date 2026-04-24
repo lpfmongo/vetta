@@ -4,6 +4,9 @@ import grpc
 
 from src.generated import chat_pb2_grpc, chat_pb2
 
+from vllm.engine.arg_utils import AsyncEngineArgs
+from vllm.engine.async_llm_engine import AsyncLLMEngine
+from vllm import SamplingParams
 
 class ChatServicer(chat_pb2_grpc.ChatServiceServicer):
     def __init__(self, engine: AsyncLLMEngine):
