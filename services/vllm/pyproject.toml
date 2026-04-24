@@ -5,6 +5,8 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "grpcio>=1.80.0",
+    "grpcio-tools>=1.80.0",
     "vllm>=0.19.1; sys_platform == 'linux'",
 ]
 
@@ -13,3 +15,10 @@ environments = [
     "sys_platform == 'linux' and platform_machine == 'x86_64'",
     "sys_platform == 'darwin' and platform_machine == 'arm64'",
 ]
+
+[tool.mypy]
+files = ["src"]
+explicit_package_bases = true
+
+[[tool.mypy.overrides]]
+module = ["src.generated.*"]

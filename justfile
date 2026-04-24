@@ -191,3 +191,121 @@ rust-build-release:
 # Clean Rust build artifacts
 rust-clean:
     cd {{ rust_dir }} && cargo clean
+
+# ── vLLM service (Python) ───────────────────────────────────────────
+
+vllm_dir := "services/vllm"
+vllm_venv := vllm_dir / ".venv"
+vllm_generated_dir := vllm_dir / "src/generated"
+vllm_sentinel := vllm_venv / ".sentinel"
+
+# Sync the vllm virtualenv (only if sentinel is stale)
+vllm-venv:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    sentinel="{{ justfile_directory() }}/{{ vllm_sentinel }}"
+    pyproject="{{ justfile_directory() }}/{{ vllm_dir }}/pyproject.toml"
+    uvlock="{{ justfile_directory() }}/{{ vllm_dir }}/uv.lock"
+    if [[ "$pyproject" -nt "$sentinel" ]] || \
+       [[ "$uvlock"    -nt "$sentinel" ]] || \
+       [[ ! -f "$sentinel" ]]; then
+        echo "Syncing vllm venv with uv..."
+        cd "{{ justfile_directory() }}/{{ vllm_dir }}" && uv sync
+        touch "$sentinel"
+    else
+        echo "vllm venv is up to date."
+    fi
+
+# Remove vllm virtualenv
+vllm-clean-venv:
+    @echo "Removing vllm venv entirely..."
+    rm -rf {{ vllm_venv }}
+
+# Delete and recreate vllm virtualenv from scratch
+vllm-fresh-venv: vllm-clean-venv vllm-venv
+    @echo "Fresh vllm venv created."
+
+# Remove generated protobuf files from vllm
+vllm-clean-proto:
+    @echo "Cleaning generated protobuf files in {{ vllm_generated_dir }}..."
+    rm -rf {{ vllm_generated_dir }}
+
+# Generate protobuf/gRPC Python code for vllm
+vllm-proto: vllm-clean-proto vllm-venv
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    # 1. Setup absolute paths to completely avoid relative path hell
+    export ROOT="$PWD"
+    export OUT_DIR="$ROOT/{{ vllm_generated_dir }}"
+    export PROTO_DIR="$ROOT/{{ proto_dir }}"
+    export PYTHON_BIN="$ROOT/{{ vllm_venv }}/bin/python"
+
+    echo "Generating protobuf/gRPC code into {{ vllm_generated_dir }}..."
+
+    # 2. Create the target directory and base __init__.py
+    mkdir -p "$OUT_DIR"
+    touch "$OUT_DIR/__init__.py"
+
+    # 3. Enter the proto directory.
+    cd "$PROTO_DIR"
+
+    # 4. Run the generator using the venv's python for chat.proto ONLY
+    "$PYTHON_BIN" -m grpc_tools.protoc \
+        -I . \
+        --python_out="$OUT_DIR" \
+        --pyi_out="$OUT_DIR" \
+        --grpc_python_out="$OUT_DIR" \
+        chat.proto
+
+    echo "Ensuring Python packages..."
+    find "$OUT_DIR" -type d -exec touch {}/__init__.py \;
+
+    # 5. Patch the generated gRPC imports for the `src.generated` namespace
+    echo "Patching gRPC imports..."
+    "$PYTHON_BIN" - << 'EOF'
+    import glob, re, os
+
+    out_dir = os.environ['OUT_DIR']
+    pattern = re.compile(r'^from (\w+) import', re.MULTILINE)
+
+    for p in glob.glob(os.path.join(out_dir, '**', '*_pb2_grpc.py'), recursive=True):
+        with open(p, 'r') as f:
+            code = f.read()
+
+        # Safely rewrites 'from chat import' -> 'from src.generated.chat import'
+        code = pattern.sub(r'from src.generated.\1 import', code)
+
+        with open(p, 'w') as f:
+            f.write(code)
+    EOF
+
+        echo "Checking generated files..."
+        test -n "$(find "$OUT_DIR" -name '*_pb2.py' -print -quit)" \
+            || (echo "No proto files generated!" && exit 1)
+
+        echo "Successfully generated protobufs!"
+
+# Sync vllm venv and generate protobuf code
+vllm-setup: vllm-venv vllm-proto
+
+# Start the vllm service
+vllm-run: vllm-setup
+    @echo "Starting vLLM service..."
+    cd {{ vllm_dir }} && uv run python main.py
+
+# Format vllm Python code with ruff
+vllm-format: vllm-venv
+    cd {{ vllm_dir }} && uv run ruff format .
+
+# Check vllm formatting (CI)
+vllm-format-check: vllm-venv
+    cd {{ vllm_dir }} && uv run ruff format --check .
+
+# Lint vllm Python code with ruff
+vllm-lint: vllm-venv
+    cd {{ vllm_dir }} && uv run ruff check .
+
+# Type-check vllm Python code with mypy
+vllm-typecheck: vllm-venv
+    cd {{ vllm_dir }} && uv run mypy .

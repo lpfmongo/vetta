@@ -1,0 +1,15 @@
+syntax = "proto3";
+package chat;
+
+service ChatService {
+  rpc StreamChat(ChatRequest) returns (stream ChatResponse);
+}
+
+message ChatRequest {
+  string prompt = 1;
+  float temperature = 2;
+}
+
+message ChatResponse {
+  string text = 1;
+}
