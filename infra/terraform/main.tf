@@ -169,3 +169,11 @@ resource "aws_instance" "vetta_ec2" {
     Name = "vetta-server-1"
   }
 }
+
+# -------------------------------------------------------------------
+# Elastic IP
+# -------------------------------------------------------------------
+resource "aws_eip" "vetta_eip" {
+  instance = aws_instance.vetta_ec2.id
+  domain   = "vpc"
+}
