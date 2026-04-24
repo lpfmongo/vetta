@@ -289,10 +289,10 @@ vllm-proto: vllm-clean-proto vllm-venv
 # Sync vllm venv and generate protobuf code
 vllm-setup: vllm-venv vllm-proto
 
-# Start the vllm service
+# Start the vLLM service
 vllm-run: vllm-setup
-    @echo "Starting vLLM service..."
-    cd {{ vllm_dir }} && uv run python main.py
+    @echo "Starting vLLM gRPC service..."
+    cd {{ vllm_dir }} && PYTHONPATH=src/generated uv run python -m src.server
 
 # Format vllm Python code with ruff
 vllm-format: vllm-venv
